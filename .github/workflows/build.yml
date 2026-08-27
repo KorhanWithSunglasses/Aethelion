@@ -43,6 +43,12 @@ jobs:
           chmod +x gradlew
           ./gradlew makePluginsJson --stacktrace
 
+      - name: Collect build artifacts
+        run: |
+          mkdir -p build
+          find . -maxdepth 3 -name "*.cs3" -exec cp {} build/ \;
+          ls -la build/
+
       - name: Deploy to builds branch
         uses: JamesIves/github-pages-deploy-action@v4
         with:
