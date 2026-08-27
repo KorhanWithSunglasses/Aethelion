@@ -91,7 +91,7 @@ class HDFilmCehennemiProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.description, div.overview, .movie-summary, p.story")?.text()?.trim()
         val year = doc.selectFirst(".year, .release-date, span.date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb, .rating, span.imdb-score")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.genres a, div.tags a, .categories a").map { it.text().trim() }
 
         val isSeries = url.contains("/dizi/") || doc.select(".season-list, .episode-list, .episodes").isNotEmpty()
@@ -117,7 +117,7 @@ class HDFilmCehennemiProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         } else {
@@ -125,7 +125,7 @@ class HDFilmCehennemiProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         }

@@ -79,7 +79,7 @@ class AnimecixProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.overview, div.description, p.story")?.text()?.trim()
         val year = doc.selectFirst(".year, .release-date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".score, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.genres a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
@@ -100,7 +100,7 @@ class AnimecixProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            this.rating = rating
+            
             this.tags = tags
             this.episodes = mutableMapOf(DubStatus.Subbed to episodes)
         }

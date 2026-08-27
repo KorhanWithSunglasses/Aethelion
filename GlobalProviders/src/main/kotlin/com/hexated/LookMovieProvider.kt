@@ -88,7 +88,7 @@ class LookMovieProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.description, div.overview, p.story")?.text()?.trim()
         val year = doc.selectFirst(".year, .release-year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".rating, .imdb")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.genres a").map { it.text().trim() }
 
         val isSeries = url.contains("/shows/")
@@ -114,7 +114,7 @@ class LookMovieProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         } else {
@@ -122,7 +122,7 @@ class LookMovieProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         }

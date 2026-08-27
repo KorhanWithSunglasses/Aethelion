@@ -91,7 +91,7 @@ class DiziPalProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.description, div.overview, p.story")?.text()?.trim()
         val year = doc.selectFirst(".year, .release-date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.genres a, div.tags a").map { it.text().trim() }
 
         val isSeries = url.contains("/dizi/") || doc.select(".season-list, .episodes, .episode-item").isNotEmpty()
@@ -117,7 +117,7 @@ class DiziPalProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         } else {
@@ -125,7 +125,7 @@ class DiziPalProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         }

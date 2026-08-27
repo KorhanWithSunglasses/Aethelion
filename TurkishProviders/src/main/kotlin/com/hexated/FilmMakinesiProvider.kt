@@ -80,14 +80,14 @@ class FilmMakinesiProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.film-ozet, div.description, p.story")?.text()?.trim()
         val year = doc.selectFirst(".yil, .year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.kategoriler a, div.genres a").map { it.text().trim() }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            this.rating = rating
+            
             this.tags = tags
         }
     }

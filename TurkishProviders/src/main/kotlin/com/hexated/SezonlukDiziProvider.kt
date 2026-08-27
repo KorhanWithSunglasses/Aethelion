@@ -80,7 +80,7 @@ class SezonlukDiziProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.ozet, div.description, p.story")?.text()?.trim()
         val year = doc.selectFirst(".yapim-yili, .year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb-puani, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.turler a, div.genres a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
@@ -103,7 +103,7 @@ class SezonlukDiziProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            this.rating = rating
+            
             this.tags = tags
         }
     }

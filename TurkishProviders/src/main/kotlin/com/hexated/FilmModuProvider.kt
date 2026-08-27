@@ -81,14 +81,14 @@ class FilmModuProvider : MainAPI() {
         }
         val description = doc.selectFirst(".summary, .movie-overview, p.story")?.text()?.trim()
         val year = doc.selectFirst(".release-year, .year, span.date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb, .rating, span.score")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.categories a, div.genres a").map { it.text().trim() }
 
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            this.rating = rating
+            
             this.tags = tags
         }
     }

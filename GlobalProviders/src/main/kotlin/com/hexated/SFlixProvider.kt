@@ -89,7 +89,7 @@ class SFlixProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.description, div.overview")?.text()?.trim()
         val year = doc.selectFirst(".item-year, .year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".item-rating, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select("div.item-genres a").map { it.text().trim() }
 
         val isSeries = url.contains("/tv/")
@@ -115,7 +115,7 @@ class SFlixProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         } else {
@@ -123,7 +123,7 @@ class SFlixProvider : MainAPI() {
                 this.posterUrl = poster
                 this.plot = description
                 this.year = year
-                this.rating = rating
+                
                 this.tags = tags
             }
         }

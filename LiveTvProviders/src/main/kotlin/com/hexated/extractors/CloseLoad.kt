@@ -1,6 +1,7 @@
 package com.hexated.extractors
 
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
@@ -14,7 +15,7 @@ open class CloseLoad : ExtractorApi() {
     override suspend fun getUrl(
         url: String,
         referer: String?,
-        subtitleCallback: (suspend () -> Unit)?,
+        subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
         try {

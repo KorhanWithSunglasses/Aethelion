@@ -80,7 +80,7 @@ class DiziWatchProvider : MainAPI() {
         }
         val description = doc.selectFirst(".series-summary, .entry-content p, .overview")?.text()?.trim()
         val year = doc.selectFirst(".year, .release-year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val rating = doc.selectFirst(".imdb-score, .rating")?.text()?.toRatingInt()
+        
         val tags = doc.select(".series-genres a, .genres a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
@@ -107,7 +107,7 @@ class DiziWatchProvider : MainAPI() {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            this.rating = rating
+            
             this.tags = tags
         }
     }
