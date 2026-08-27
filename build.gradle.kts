@@ -70,7 +70,7 @@ subprojects {
         val implementation by configurations
         cloudstream("com.lagradost:cloudstream3:pre-release")
         implementation("org.jsoup:jsoup:1.17.2")
-        implementation("com.lagradost:nicehttp:0.4.11")
+        implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.1")
     }
 }
