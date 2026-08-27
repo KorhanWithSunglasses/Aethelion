@@ -1,9 +1,19 @@
+import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
-plugins {
-    kotlin("jvm") version "1.9.23" apply false
-    id("com.lagradost.cloudstream3.gradle") version "0.1.1"
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven("https://jitpack.io")
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.2.2")
+        classpath("com.github.recloudstream:gradle:-SNAPSHOT")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
+    }
 }
 
 allprojects {
@@ -14,13 +24,34 @@ allprojects {
     }
 }
 
+fun Project.cloudstream(configuration: CloudstreamExtension.() -> Unit) =
+    extensions.getByName<CloudstreamExtension>("cloudstream").configuration()
+
+fun Project.android(configuration: BaseExtension.() -> Unit) =
+    extensions.getByName<BaseExtension>("android").configuration()
+
 subprojects {
-    apply(plugin = "org.jetbrains.kotlin.jvm")
+    apply(plugin = "com.android.library")
+    apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
+
+    android {
+        compileSdkVersion(34)
+
+        defaultConfig {
+            minSdk = 21
+            targetSdk = 34
+        }
+
+        compileOptions {
+            sourceCompatibility = JavaVersion.VERSION_1_8
+            targetCompatibility = JavaVersion.VERSION_1_8
+        }
+    }
 
     tasks.withType<KotlinCompile> {
         kotlinOptions {
-            jvmTarget = "17"
+            jvmTarget = "1.8"
             freeCompilerArgs = freeCompilerArgs + "-Xopt-in=kotlin.RequiresOptIn"
         }
     }
