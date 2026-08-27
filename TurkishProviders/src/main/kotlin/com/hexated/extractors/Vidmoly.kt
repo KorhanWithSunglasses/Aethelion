@@ -1,49 +1,48 @@
 package com.hexated.extractors
 
-import com.hexated.core.JsUnpacker
-import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.hexated.core.JsUnpacker
 
 open class Vidmoly : ExtractorApi() {
     override var name = "Vidmoly"
     override var mainUrl = "https://vidmoly.to"
-    override val requiresReferer = true
+    override val requiresReferer = false
 
-    override suspend fun getUrl(url: String, referer: String?): List<ExtractorLink>? {
-        val cleanUrl = if (url.contains("/embed-") || url.contains("/w/")) {
-            url
-        } else {
-            val id = url.substringAfterLast("/")
-            "https://vidmoly.to/embed-$id.html"
+    override suspend fun getUrl(
+        url: String,
+        referer: String?,
+        subtitleCallback: (suspend () -> Unit)?,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        try {
+            val response = app.get(
+                url,
+                headers = mapOf("Referer" to (referer ?: mainUrl))
+            ).text
+
+            val unpacked = JsUnpacker.unpackAndCombine(response) ?: response
+            val m3u8Match = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""").find(unpacked)
+                ?: Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+
+            m3u8Match?.let { match ->
+                val streamUrl = match.groupValues[1]
+                callback.invoke(
+                    ExtractorLink(
+                        source = this.name,
+                        name = "${this.name} HLS",
+                        url = streamUrl,
+                        referer = url,
+                        quality = Qualities.P1080.value,
+                        type = ExtractorLinkType.M3U8
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-
-        val headers = NetworkHelper.getRefererHeaders(referer ?: mainUrl)
-        val response = app.get(cleanUrl, headers = headers).text
-
-        val unpacked = if (response.contains("eval(function(p,a,c,k,e,")) {
-            JsUnpacker.unpack(response) ?: response
-        } else {
-            response
-        }
-
-        val m3u8Regex = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""")
-        val m3u8Url = m3u8Regex.find(unpacked)?.groupValues?.get(1)
-            ?: Regex("""sources:\s*\[\{\s*file:\s*["']([^"']+)""").find(unpacked)?.groupValues?.get(1)
-            ?: return null
-
-        return listOf(
-            ExtractorLink(
-                source = name,
-                name = name,
-                url = m3u8Url,
-                referer = cleanUrl,
-                quality = Qualities.P1080.value,
-                isM3u8 = true,
-                headers = NetworkHelper.getStreamHeaders("https://vidmoly.to", cleanUrl)
-            )
-        )
     }
 }

@@ -58,7 +58,10 @@ subprojects {
     tasks.withType<KotlinCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_1_8)
-            freeCompilerArgs.add("-Xopt-in=kotlin.RequiresOptIn")
+            freeCompilerArgs.addAll(
+                "-Xopt-in=kotlin.RequiresOptIn",
+                "-Xskip-metadata-version-check"
+            )
         }
     }
 
