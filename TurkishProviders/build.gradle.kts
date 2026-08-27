@@ -4,13 +4,8 @@ cloudstream {
     setPlugin(
         name = "TurkishProviders",
         description = "Turkish Movies & Series Providers for CloudStream",
-        authors = listOf("Hexated"),
+        authors = listOf("Korhan"),
         version = 1,
         language = "tr"
     )
-}
-
-dependencies {
-    implementation(project(":core"))
-    implementation(project(":extractors"))
 }
