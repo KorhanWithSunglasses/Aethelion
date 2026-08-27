@@ -1,11 +1,8 @@
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+version = 1
 
 cloudstream {
-    setPlugin(
-        name = "AsianAnimeProviders",
-        description = "Turkish Anime and Asian Drama Providers",
-        authors = listOf("Korhan"),
-        version = 1,
-        language = "tr"
-    )
+    language = "tr"
+    description = "Turkish Anime and Asian Drama Providers"
+    authors = listOf("Korhan")
+    status = 1
 }

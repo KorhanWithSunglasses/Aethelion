@@ -1,11 +1,8 @@
-import com.lagradost.cloudstream3.gradle.CloudstreamExtension
+version = 1
 
 cloudstream {
-    setPlugin(
-        name = "LiveTvProviders",
-        description = "Live TV Channels and Sports Streams",
-        authors = listOf("Korhan"),
-        version = 1,
-        language = "tr"
-    )
+    language = "tr"
+    description = "Live TV Channels and Sports Streams"
+    authors = listOf("Korhan")
+    status = 1
 }

@@ -36,6 +36,10 @@ subprojects {
     apply(plugin = "kotlin-android")
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
+    cloudstream {
+        setRepo(System.getenv("GITHUB_REPOSITORY") ?: "https://github.com/KorhanWithSunglasses/Aethelion")
+    }
+
     android {
         namespace = "com.hexated.${project.name.lowercase()}"
         compileSdkVersion(34)
