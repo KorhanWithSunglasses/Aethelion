@@ -14,7 +14,7 @@ object DynamicDomainHelper {
     private val domainCache = ConcurrentHashMap<String, String>()
 
     // Remote manifest URL (hosted on the repository builds/config branch)
-    private const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/username/CloudStreamRepo/builds/domains.json"
+    private const val REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/KorhanWithSunglasses/Aethelion/builds/domains.json"
 
     suspend fun getActiveDomain(
         providerKey: String,

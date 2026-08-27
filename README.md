@@ -11,7 +11,7 @@
 3. **Depo Ekle (Add Repository)** butonuna tıklayın.
 4. Aşağıdaki **Aethelion** depo URL'sini girin:
    ```text
-   https://raw.githubusercontent.com/KULLANICI_ADINIZ/Aethelion/builds/plugins.json
+   https://raw.githubusercontent.com/KorhanWithSunglasses/Aethelion/builds/plugins.json
    ```
 5. Karşınıza çıkan modülleri (`TurkishProviders`, `LiveTvProviders` vb.) tek tıkla yükleyin ve TV keyfinin tadını çıkarın!
 
