@@ -10,9 +10,9 @@ buildscript {
     }
 
     dependencies {
-        classpath("com.android.tools.build:gradle:8.2.2")
+        classpath("com.android.tools.build:gradle:8.7.3")
         classpath("com.github.recloudstream:gradle:-SNAPSHOT")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
     }
 }
 
@@ -36,10 +36,9 @@ subprojects {
     apply(plugin = "com.lagradost.cloudstream3.gradle")
 
     android {
-        compileSdkVersion(34)
-
         defaultConfig {
             minSdk = 21
+            compileSdkVersion(34)
             targetSdk = 34
         }
 
