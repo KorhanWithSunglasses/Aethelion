@@ -67,8 +67,10 @@ subprojects {
 
     dependencies {
         val cloudstream by configurations
+        val implementation by configurations
         cloudstream("com.lagradost:cloudstream3:pre-release")
-        compileOnly("org.jsoup:jsoup:1.17.2")
-        compileOnly("com.lagradost:nicehttp:0.4.11")
+        implementation("org.jsoup:jsoup:1.17.2")
+        implementation("com.lagradost:nicehttp:0.4.11")
+        implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.1")
     }
 }
