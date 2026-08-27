@@ -1,6 +1,6 @@
-# 🎬 CloudStream Turkish & Global Extension Repository
+# 🌟 Aethelion - CloudStream Multi-Provider Repository
 
-Bu depo, CloudStream 3 için geliştirilmiş çoklu sağlayıcı (Türkçe Film/Dizi, Anime, Asya/K-Drama, Global ve Canlı TV) eklenti paketidir.
+**Aethelion**, CloudStream 3 için geliştirilmiş; tüm popüler Türkçe Film, Yabancı Dizi, Anime, Asya/K-Drama ve Ulusal Canlı TV yayınlarını tek merkezde toplayan yeni nesil eklenti deposudur.
 
 ---
 
@@ -9,11 +9,11 @@ Bu depo, CloudStream 3 için geliştirilmiş çoklu sağlayıcı (Türkçe Film/
 1. **CloudStream 3** uygulamasını Android TV veya telefonunuzda açın.
 2. **Ayarlar (Settings) > Eklentiler (Extensions)** bölümüne gidin.
 3. **Depo Ekle (Add Repository)** butonuna tıklayın.
-4. Aşağıdaki depo URL'sini girin:
+4. Aşağıdaki **Aethelion** depo URL'sini girin:
    ```text
-   https://raw.githubusercontent.com/KULLANICI_ADINIZ/CloudStreamRepo/builds/plugins.json
+   https://raw.githubusercontent.com/KULLANICI_ADINIZ/Aethelion/builds/plugins.json
    ```
-5. Karşınıza çıkan modülleri (`TurkishProviders`, `LiveTvProviders` vb.) tek tıkla yükleyin ve izlemeye başlayın!
+5. Karşınıza çıkan modülleri (`TurkishProviders`, `LiveTvProviders` vb.) tek tıkla yükleyin ve TV keyfinin tadını çıkarın!
 
 ---
 

@@ -11,7 +11,7 @@ plugins {
     id("com.lagradost.cloudstream3.gradle") version "0.1.1" apply false
 }
 
-rootProject.name = "CloudStreamRepo"
+rootProject.name = "Aethelion"
 
 include(":core")
 include(":extractors")
