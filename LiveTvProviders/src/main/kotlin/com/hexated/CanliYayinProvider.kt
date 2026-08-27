@@ -5,6 +5,7 @@ import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import org.jsoup.nodes.Element
 
 class CanliYayinProvider : MainAPI() {
@@ -77,7 +78,7 @@ class CanliYayinProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.kanal-aciklama, p.desc")?.text()?.trim()
 
-        return newLiveStreamLoadResponse(title, url, TvType.Live, url) {
+        return newLiveStreamLoadResponse(title, url, url) {
             this.posterUrl = poster
             this.plot = description
         }
@@ -111,7 +112,7 @@ class CanliYayinProvider : MainAPI() {
                 url = m3u8Url,
                 referer = data,
                 quality = Qualities.P1080.value,
-                isM3u8 = true,
+                type = ExtractorLinkType.M3U8,
                 headers = NetworkHelper.getStreamHeaders(data, data)
             )
         )

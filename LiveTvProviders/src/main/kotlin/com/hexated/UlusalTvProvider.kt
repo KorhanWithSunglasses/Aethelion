@@ -4,6 +4,7 @@ import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 
 class UlusalTvProvider : MainAPI() {
     override var name = "Ulusal Canlı TV"
@@ -141,7 +142,7 @@ class UlusalTvProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val ch = channels.firstOrNull { it.name == url } ?: channels.first()
-        return newLiveStreamLoadResponse(ch.name, ch.name, TvType.Live, ch.streamUrl) {
+        return newLiveStreamLoadResponse(ch.name, ch.name, ch.streamUrl) {
             this.posterUrl = ch.posterUrl
             this.plot = "${ch.name} Canlı TV Yayını"
         }
@@ -162,7 +163,7 @@ class UlusalTvProvider : MainAPI() {
                 url = ch.streamUrl,
                 referer = ch.referer.ifEmpty { mainUrl },
                 quality = Qualities.P1080.value,
-                isM3u8 = true,
+                type = ExtractorLinkType.M3U8,
                 headers = NetworkHelper.getStreamHeaders(ch.origin.ifEmpty { ch.referer }, ch.referer.ifEmpty { mainUrl })
             )
         )
