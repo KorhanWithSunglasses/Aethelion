@@ -1,5 +1,7 @@
 package com.hexated
 
+import com.hexated.core.ExtractorHelper
+
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.*

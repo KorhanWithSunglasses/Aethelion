@@ -1,5 +1,7 @@
 package com.hexated
 
+import com.hexated.core.ExtractorHelper
+
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.NetworkHelper
 import com.hexated.extractors.CloseLoad
@@ -118,9 +120,9 @@ class GogoanimeProvider : MainAPI() {
             val cleanUrl = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
 
             when {
-                cleanUrl.contains("streamwish") -> Streamwish().getUrl(cleanUrl, data)?.forEach { callback(it) }
-                cleanUrl.contains("closeload") -> CloseLoad().getUrl(cleanUrl, data)?.forEach { callback(it) }
-                else -> loadExtractor(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("streamwish") -> Streamwish().getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("closeload") -> CloseLoad().getUrl(cleanUrl, data, subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, name, subtitleCallback, callback)
             }
         }
 

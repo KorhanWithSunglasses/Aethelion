@@ -1,25 +1,27 @@
 package com.hexated
 
 import com.hexated.core.DynamicDomainHelper
+import com.hexated.core.ExtractorHelper
 import com.hexated.core.NetworkHelper
+import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
+import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class AnimecixProvider : MainAPI() {
-    override var name = "AnimeciX"
+    override var name = "Animecix"
     override var mainUrl = "https://animecix.net"
     override var lang = "tr"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie)
+    override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)
 
     private val fallbackDomains = listOf(
         "https://animecix.net",
-        "https://animecix.com",
-        "https://animecix.tv"
+        "https://animecix.tv",
+        "https://animecix.com"
     )
 
     private suspend fun getUrl(): String {
@@ -27,32 +29,36 @@ class AnimecixProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "" to "Son Eklenen Bölümler",
-        "animeler" to "Tüm Animeler",
-        "trendler" to "Trend Animeler"
+        "" to "Son Eklenen Animeler",
+        "turler/aksiyon" to "Aksiyon Animeleri",
+        "turler/macera" to "Macera Animeleri",
+        "turler/fantastik" to "Fantastik",
+        "turler/komedi" to "Komedi",
+        "turler/romantizm" to "Romantizm"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            "$domain/${request.data}"
+            if (request.data.isEmpty()) domain else "$domain/${request.data}"
         } else {
-            "$domain/${request.data}?page=$page"
+            "$domain/${request.data}?sayfa=$page"
         }
 
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.anime-card, div.poster, article, div.item").mapNotNull {
-            it.toSearchResult()
+        val home = doc.select("div.anime-card, div.poster, article, div.content-item, div.film").mapNotNull {
+            it.toSearchResult(domain)
         }
 
         return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .title, .name, a")?.text()?.trim() ?: return null
-        val href = this.selectFirst("a")?.attr("href") ?: return null
+    private fun Element.toSearchResult(domain: String): SearchResponse? {
+        val title = this.selectFirst("h2, h3, .anime-title, .title, a")?.text()?.trim() ?: return null
+        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
         val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
+            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
@@ -66,41 +72,50 @@ class AnimecixProvider : MainAPI() {
         val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
 
         return doc.select("div.anime-card, div.poster, article, div.search-result").mapNotNull {
-            it.toSearchResult()
+            it.toSearchResult(domain)
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+        val domain = getUrl()
 
-        val title = doc.selectFirst("h1, .anime-title, .title")?.text()?.trim() ?: "Bilinmeyen Anime"
-        val poster = doc.selectFirst("div.poster img, .anime-poster img, meta[property=og:image]")?.let {
+        val title = doc.selectFirst("h1, .anime-title, .title")?.text()?.trim() ?: "Anime"
+        val poster = doc.selectFirst("div.poster img, .anime-poster img, meta[property=og:image], .cover img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.overview, div.description, p.story")?.text()?.trim()
-        val year = doc.selectFirst(".year, .release-date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        
-        val tags = doc.select("div.genres a").map { it.text().trim() }
+        val description = doc.selectFirst("div.description, div.overview, p.story, div.summary, .anime-desc")?.text()?.trim()
+        val year = doc.selectFirst(".year, .release-date, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
+        val tags = doc.select("div.genres a, div.tags a, .genre a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
-        doc.select("div.episode-item, li.episode, a.episode-link, div.episodes a").forEachIndexed { index, ep ->
-            val epHref = ep.attr("href")
-            val epName = ep.text().trim().ifEmpty { "${index + 1}. Bölüm" }
-            val epNum = Regex("""(\d+)\.\s*bölüm""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
+
+        // Full Episode Parsing (Bölüm 1, Bölüm 2...)
+        doc.select("div.episodes-list a, ul.bolumler li a, div.episode-item a, div.tab-content a").forEachIndexed { index, epLink ->
+            val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
+            val epTitle = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
+            val epNumber = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
+            val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
 
             episodes.add(
-                newEpisode(epHref) {
-                    this.name = epName
-                    this.episode = epNum
-                }
+                Episode(
+                    data = epHref,
+                    name = epTitle,
+                    season = seasonNumber,
+                    episode = epNumber,
+                    posterUrl = poster
+                )
             )
+        }
+
+        if (episodes.isEmpty()) {
+            episodes.add(Episode(data = url, name = "1. Bölüm", season = 1, episode = 1, posterUrl = poster))
         }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            
             this.tags = tags
             this.episodes = mutableMapOf(DubStatus.Subbed to episodes)
         }
@@ -114,17 +129,41 @@ class AnimecixProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        val iframes = doc.select("iframe, div.player iframe").mapNotNull {
-            it.attr("data-src").ifEmpty { it.attr("src") }.takeIf { src -> src.isNotEmpty() }
-        }.toMutableList()
+        // Check for subtitles
+        doc.select("track[kind=subtitles], track[kind=captions]").forEach { track ->
+            val subSrc = track.attr("src")
+            val subLang = track.attr("label").ifEmpty { "Türkçe" }
+            if (subSrc.isNotEmpty()) {
+                subtitleCallback.invoke(SubtitleFile(lang = subLang, url = subSrc))
+            }
+        }
 
-        for (iframeUrl in iframes.distinct()) {
-            val cleanUrl = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
+        val iframes = mutableListOf<String>()
+
+        doc.select("iframe").forEach { iframe ->
+            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+            if (src.isNotEmpty()) iframes.add(src)
+        }
+
+        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a").forEach { tab ->
+            val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
+            if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
+        }
+
+        val vidmoly = Vidmoly()
+        val rapidame = Rapidame()
+        val streamwish = Streamwish()
+        val closeLoad = CloseLoad()
+
+        iframes.distinct().forEach { rawUrl ->
+            val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
             when {
-                cleanUrl.contains("vidmoly") -> Vidmoly().getUrl(cleanUrl, data)?.forEach { callback(it) }
-                cleanUrl.contains("rapidame") -> Rapidame().getUrl(cleanUrl, data)?.forEach { callback(it) }
-                else -> loadExtractor(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, "Animecix", subtitleCallback, callback)
             }
         }
 
