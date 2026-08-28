@@ -98,18 +98,22 @@ class AnimecixProvider : MainAPI() {
             val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
 
             episodes.add(
-                Episode(
-                    data = epHref,
-                    name = epTitle,
-                    season = seasonNumber,
-                    episode = epNumber,
-                    posterUrl = poster
-                )
+                newEpisode(epHref) {
+                    this.name = epTitle
+                    this.season = seasonNumber
+                    this.episode = epNumber
+                    this.posterUrl = poster
+                }
             )
         }
 
         if (episodes.isEmpty()) {
-            episodes.add(Episode(data = url, name = "1. Bölüm", season = 1, episode = 1, posterUrl = poster))
+            episodes.add(newEpisode(url) {
+                this.name = "1. Bölüm"
+                this.season = 1
+                this.episode = 1
+                this.posterUrl = poster
+            })
         }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {

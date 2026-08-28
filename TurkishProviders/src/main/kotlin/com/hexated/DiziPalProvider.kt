@@ -142,13 +142,12 @@ class DiziPalProvider : MainAPI() {
                     val epPoster = epNode.get("image")?.asText() ?: poster
 
                     episodes.add(
-                        Episode(
-                            data = epUrl,
-                            name = epName,
-                            season = seasonNum,
-                            episode = epNum,
-                            posterUrl = epPoster
-                        )
+                        newEpisode(epUrl) {
+                            this.name = epName
+                            this.season = seasonNum
+                            this.episode = epNum
+                            this.posterUrl = epPoster
+                        }
                     )
                 }
             }
@@ -162,20 +161,24 @@ class DiziPalProvider : MainAPI() {
                     val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
 
                     episodes.add(
-                        Episode(
-                            data = epHref,
-                            name = epTitle,
-                            season = seasonNumber,
-                            episode = epNumber,
-                            posterUrl = poster
-                        )
+                        newEpisode(epHref) {
+                            this.name = epTitle
+                            this.season = seasonNumber
+                            this.episode = epNumber
+                            this.posterUrl = poster
+                        }
                     )
                 }
             }
 
             // Fallback single episode if list is empty
             if (episodes.isEmpty()) {
-                episodes.add(Episode(data = url, name = "1. Bölüm", season = 1, episode = 1, posterUrl = poster))
+                episodes.add(newEpisode(url) {
+                    this.name = "1. Bölüm"
+                    this.season = 1
+                    this.episode = 1
+                    this.posterUrl = poster
+                })
             }
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
