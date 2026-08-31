@@ -157,16 +157,15 @@ class UlusalTvProvider : MainAPI() {
         val ch = channels.firstOrNull { it.streamUrl == data || it.name == data } ?: return false
 
         callback(
-            newExtractorLink(
-                name,
-                ch.name,
-                ch.streamUrl,
-                ch.referer.ifEmpty { mainUrl },
-                Qualities.P1080.value,
-                ExtractorLinkType.M3U8
-            ) {
-                this.headers = NetworkHelper.getStreamHeaders(ch.origin.ifEmpty { ch.referer }, ch.referer.ifEmpty { mainUrl })
-            }
+            ExtractorLink(
+                source = name,
+                name = ch.name,
+                url = ch.streamUrl,
+                referer = ch.referer.ifEmpty { mainUrl },
+                quality = Qualities.P1080.value,
+                type = ExtractorLinkType.M3U8,
+                headers = NetworkHelper.getStreamHeaders(ch.origin.ifEmpty { ch.referer }, ch.referer.ifEmpty { mainUrl })
+            )
         )
         return true
     }
