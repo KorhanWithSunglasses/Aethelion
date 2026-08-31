@@ -20,8 +20,8 @@ class TurkanimeProvider : MainAPI() {
 
     private val fallbackDomains = listOf(
         "https://www.turkanime.tv",
-        "https://www.turkanime.co",
-        "https://turkanime.tv"
+        "https://turkanime.tv",
+        "https://www.turkanime.co"
     )
 
     private suspend fun getUrl(): String {
@@ -31,7 +31,10 @@ class TurkanimeProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "" to "Son Eklenen Bölümler",
         "anime-listesi" to "Anime Listesi",
-        "populer-animeler" to "Popüler Animeler"
+        "populer-animeler" to "Popüler Animeler",
+        "tur/aksiyon" to "Aksiyon",
+        "tur/macera" to "Macera",
+        "tur/fantastik" to "Fantastik"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -44,9 +47,9 @@ class TurkanimeProvider : MainAPI() {
 
         return try {
             val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-            val home = doc.select("div.panel-body div.col-md-3, div.anime-card, div.box, article").mapNotNull {
+            val home = doc.select("div.panel-body a, a[href*=\"/anime/\"], div.anime-card, div.box, article").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
             newHomePageResponse(request.name, home)
         } catch (_: Exception) {
             newHomePageResponse(request.name, emptyList())
@@ -54,11 +57,22 @@ class TurkanimeProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val title = this.selectFirst("h4, h3, .title, a")?.text()?.trim() ?: return null
-        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
-        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        if (!rawHref.contains("/anime/") && !rawHref.contains("/video/")) return null
+
+        val href = when {
+            rawHref.startsWith("//") -> "https:$rawHref"
+            rawHref.startsWith("http") -> rawHref
+            else -> "$domain$rawHref"
+        }
+
+        val title = this.selectFirst("h4, h3, .title, a, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
         val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
+            val src = it.attr("data-src").ifEmpty { it.attr("src") }
+            if (src.startsWith("//")) "https:$src" else src
         }
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
@@ -71,9 +85,9 @@ class TurkanimeProvider : MainAPI() {
         val searchUrl = "$domain/arama?arama=$query"
         return try {
             val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-            doc.select("div.panel-body div.col-md-3, div.anime-card, article").mapNotNull {
+            doc.select("a[href*=\"/anime/\"], div.panel-body a").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
         } catch (_: Exception) {
             emptyList()
         }
@@ -83,17 +97,22 @@ class TurkanimeProvider : MainAPI() {
         val domain = getUrl()
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .panel-title, .title")?.text()?.trim() ?: "Anime"
-        val poster = doc.selectFirst("div.panel-body img, meta[property=og:image]")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
+        val title = doc.selectFirst("h1, .panel-title, .title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim() ?: "Anime"
+
+        val poster = doc.selectFirst("div.panel-body img, meta[property=og:image], img.img-responsive")?.let {
+            val src = it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
+            if (src.startsWith("//")) "https:$src" else src
         }
         val description = doc.selectFirst("div.panel-body p, .summary, .description")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
         val tags = doc.select("div.panel-body a[href*=tur/]").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
-        doc.select("div.bolumler a, ul.episodes li a, a[href*=bolum]").forEachIndexed { index, epLink ->
-            val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
+        doc.select("div.bolumler a, ul.episodes li a, a[href*=\"/video/\"], a[href*=bolum]").forEachIndexed { index, epLink ->
+            val rawEpHref = epLink.attr("href")
+            val epHref = if (rawEpHref.startsWith("//")) "https:$rawEpHref" else if (rawEpHref.startsWith("http")) rawEpHref else "$domain$rawEpHref"
             val epTitle = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
             val epNumber = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
             val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1

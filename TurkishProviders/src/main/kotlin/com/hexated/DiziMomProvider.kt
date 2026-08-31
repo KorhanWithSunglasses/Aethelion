@@ -1,27 +1,27 @@
 package com.hexated
 
-import com.hexated.core.ExtractorHelper
-
 import com.hexated.core.DynamicDomainHelper
+import com.hexated.core.ExtractorHelper
 import com.hexated.core.NetworkHelper
+import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
+import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class DiziMomProvider : MainAPI() {
     override var name = "DiziMom"
-    override var mainUrl = "https://www.dizimom.food"
+    override var mainUrl = "https://dizimom.org"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
     private val fallbackDomains = listOf(
-        "https://www.dizimom.food",
-        "https://dizimom.pro",
-        "https://dizimom.tv"
+        "https://dizimom.org",
+        "https://dizimom.tv",
+        "https://dizimom.net"
     )
 
     private suspend fun getUrl(): String {
@@ -30,31 +30,41 @@ class DiziMomProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "" to "Son Eklenen Bölümler",
-        "diziler" to "Popüler Diziler",
-        "kategori/kore-dizileri" to "Kore Dizileri"
+        "diziler" to "Tüm Diziler",
+        "populer-diziler" to "Popüler Diziler",
+        "tur/netflix-dizileri" to "Netflix Dizileri",
+        "tur/trend" to "Trend Diziler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            "$domain/${request.data}"
+            if (request.data.isEmpty()) domain else "$domain/${request.data}"
         } else {
             "$domain/${request.data}/page/$page/"
         }
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.post-item, div.dizi-karti, article").mapNotNull {
-            it.toSearchResult()
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+            val home = doc.select("article, div.post, div.movie-card, div.box, a[href*=\"/dizi/\"]").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
+            newHomePageResponse(request.name, home)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
         }
-
-        return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .title, a")?.text()?.trim() ?: return null
-        val href = this.selectFirst("a")?.attr("href") ?: return null
+    private fun Element.toSearchResult(domain: String): SearchResponse? {
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .post-title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
         val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
+            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -65,46 +75,58 @@ class DiziMomProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
         val searchUrl = "$domain/?s=$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        return doc.select("div.post-item, div.search-item, article").mapNotNull {
-            it.toSearchResult()
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("article, div.post, div.search-result").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
+        val domain = getUrl()
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .entry-title")?.text()?.trim() ?: "Bilinmeyen Dizi"
-        val poster = doc.selectFirst("div.poster img, .entry-thumbnail img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
+        val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "Dizi"
+        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image]")?.let {
+            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.entry-content p, .overview")?.text()?.trim()
-        val year = doc.selectFirst(".year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        
-        val tags = doc.select("div.genres a").map { it.text().trim() }
+        val description = doc.selectFirst("div.overview, div.description, .entry-content p")?.text()?.trim()
+        val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
+        val tags = doc.select("div.genres a, .tags a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
-        doc.select("div.episode-item, li.bolum, a.bolum-link").forEachIndexed { index, ep ->
-            val epHref = ep.attr("href")
+        doc.select("ul.episodes li a, div.episode-item a, div.episodes a, a.episode-link").forEachIndexed { index, ep ->
+            val epHref = ep.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
             val epName = ep.text().trim().ifEmpty { "${index + 1}. Bölüm" }
-            val seasonNum = ep.attr("data-season").toIntOrNull() ?: 1
-            val epNum = ep.attr("data-episode").toIntOrNull() ?: (index + 1)
+            val seasonNum = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epName)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
+            val epNum = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epName)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
 
             episodes.add(
                 newEpisode(epHref) {
                     this.name = epName
                     this.season = seasonNum
                     this.episode = epNum
+                    this.posterUrl = poster
                 }
             )
+        }
+
+        if (episodes.isEmpty()) {
+            episodes.add(newEpisode(url) {
+                this.name = "1. Bölüm"
+                this.season = 1
+                this.episode = 1
+                this.posterUrl = poster
+            })
         }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            
             this.tags = tags
         }
     }
@@ -117,17 +139,26 @@ class DiziMomProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        val iframes = doc.select("iframe, div.player iframe").mapNotNull {
-            it.attr("data-src").ifEmpty { it.attr("src") }.takeIf { src -> src.isNotEmpty() }
-        }.toMutableList()
+        val iframes = mutableListOf<String>()
+        doc.select("iframe").forEach {
+            val src = it.attr("src").ifEmpty { it.attr("data-src") }
+            if (src.isNotEmpty()) iframes.add(src)
+        }
 
-        for (iframeUrl in iframes.distinct()) {
-            val cleanUrl = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
+        val vidmoly = Vidmoly()
+        val rapidame = Rapidame()
+        val streamwish = Streamwish()
+        val closeLoad = CloseLoad()
+
+        iframes.distinct().forEach { rawUrl ->
+            val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
             when {
-                cleanUrl.contains("vidmoly") -> Vidmoly().getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("rapidame") -> Rapidame().getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, name, subtitleCallback, callback)
+                cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziMom", subtitleCallback, callback)
             }
         }
 
