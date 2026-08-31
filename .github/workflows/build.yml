@@ -50,6 +50,7 @@ jobs:
           cp plugins.json build/ 2>/dev/null || true
           cp repo.json build/ 2>/dev/null || true
           cp domains.json build/ 2>/dev/null || true
+          python -c "import json; p=json.load(open('build/plugins.json')); [x.pop('fileHash', None) for x in p]; json.dump(p, open('build/plugins.json', 'w'), indent=2)"
           ls -la build/
 
       - name: Deploy to builds branch
