@@ -18,9 +18,10 @@ class DiziMomProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
+    // 500ms delay prevents 429 Too Many Requests rate limiting
     override var sequentialMainPage = true
-    override var sequentialMainPageDelay = 50L
-    override var sequentialMainPageScrollDelay = 50L
+    override var sequentialMainPageDelay = 500L
+    override var sequentialMainPageScrollDelay = 500L
 
     private val fallbackDomains = listOf(
         "https://dizimom.org",
@@ -67,8 +68,16 @@ class DiziMomProvider : MainAPI() {
             if (it.tagName() == "img") it.attr("alt") else it.text()
         }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
 
-        val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
+        val posterUrl = this.selectFirst("img")?.let { img ->
+            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }.ifEmpty { img.attr("data-lazy-src") }.ifEmpty { img.attr("srcset") }
+            val src = img.attr("src")
+            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) {
+                dataSrc.split(" ").firstOrNull { it.startsWith("http") } ?: dataSrc
+            } else if (src.isNotEmpty() && !src.startsWith("data:")) {
+                src
+            } else {
+                null
+            }
         }
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {

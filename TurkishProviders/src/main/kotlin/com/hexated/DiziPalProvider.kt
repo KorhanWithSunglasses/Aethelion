@@ -1,5 +1,6 @@
 package com.hexated
 
+import com.hexated.core.DiziPalCryptoHelper
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.ExtractorHelper
 import com.hexated.core.NetworkHelper
@@ -9,6 +10,7 @@ import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.Qualities
 import org.jsoup.nodes.Element
 
 class DiziPalProvider : MainAPI() {
@@ -18,9 +20,10 @@ class DiziPalProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
+    // 500ms delay prevents 429 Too Many Requests rate limiting from Cloudflare WAF
     override var sequentialMainPage = true
-    override var sequentialMainPageDelay = 50L
-    override var sequentialMainPageScrollDelay = 50L
+    override var sequentialMainPageDelay = 500L
+    override var sequentialMainPageScrollDelay = 500L
 
     private val fallbackDomains = listOf(
         "https://dizipalw.com",
@@ -70,8 +73,16 @@ class DiziPalProvider : MainAPI() {
             if (it.tagName() == "img") it.attr("alt") else it.text()
         }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
 
-        val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
+        val posterUrl = this.selectFirst("img")?.let { img ->
+            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }.ifEmpty { img.attr("data-lazy-src") }.ifEmpty { img.attr("srcset") }
+            val src = img.attr("src")
+            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) {
+                dataSrc.split(" ").firstOrNull { it.startsWith("http") } ?: dataSrc
+            } else if (src.isNotEmpty() && !src.startsWith("data:")) {
+                src
+            } else {
+                null
+            }
         }
 
         val isSeries = href.contains("/dizi/") || href.contains("sezon")
@@ -106,8 +117,14 @@ class DiziPalProvider : MainAPI() {
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "İçerik"
-        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image], img[src*=\"poster\"]")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
+        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image], img[src*=\"poster\"], img[src*=\"back\"]")?.let { img ->
+            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }.ifEmpty { img.attr("data-lazy-src") }
+            val src = img.attr("src")
+            val og = img.attr("content")
+            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) dataSrc
+            else if (src.isNotEmpty() && !src.startsWith("data:")) src
+            else if (og.isNotEmpty()) og
+            else null
         }
         val description = doc.selectFirst("div.overview, div.description, .entry-content p, p")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
@@ -164,9 +181,22 @@ class DiziPalProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val domain = getUrl()
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
         val iframes = mutableListOf<String>()
+
+        // 1. Decrypt DiziPal data-rm-k encrypted player
+        val encryptedData = doc.selectFirst("div[data-rm-k]")?.text()?.trim()
+        if (!encryptedData.isNullOrEmpty()) {
+            val decryptedUrl = DiziPalCryptoHelper.decrypt(encryptedData)
+            if (!decryptedUrl.isNullOrEmpty()) {
+                val cleanDecrypted = if (decryptedUrl.startsWith("//")) "https:$decryptedUrl" else decryptedUrl
+                iframes.add(cleanDecrypted)
+            }
+        }
+
+        // 2. Collect visible iframes
         doc.select("iframe").forEach {
             val src = it.attr("src").ifEmpty { it.attr("data-src") }
             if (src.isNotEmpty()) iframes.add(src)
@@ -185,12 +215,41 @@ class DiziPalProvider : MainAPI() {
         iframes.distinct().forEach { rawUrl ->
             val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
-            when {
-                cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziPal", subtitleCallback, callback)
+            try {
+                // If it's a direct player host (e.g. dplayer)
+                if (cleanUrl.contains("dplayer") || cleanUrl.contains("iframe.php")) {
+                    val playerHtml = app.get(
+                        cleanUrl,
+                        headers = mapOf(
+                            "Referer" to data,
+                            "Origin" to domain,
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                        )
+                    ).text
+
+                    val m3u8Match = Regex("""(?:file|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']""").find(playerHtml)?.groupValues?.get(1)
+                    if (m3u8Match != null) {
+                        callback(
+                            ExtractorLink(
+                                source = name,
+                                name = "DiziPal HD",
+                                url = m3u8Match,
+                                referer = cleanUrl,
+                                quality = Qualities.P1080.value,
+                                type = ExtractorLinkType.M3U8
+                            )
+                        )
+                    }
+                }
+
+                when {
+                    cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziPal", subtitleCallback, callback)
+                }
+            } catch (_: Exception) {
             }
         }
 
