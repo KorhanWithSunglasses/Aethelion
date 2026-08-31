@@ -47,6 +47,7 @@ jobs:
         run: |
           mkdir -p build
           find . -maxdepth 3 -name "*.cs3" -exec cp {} build/ \;
+          cp domains.json build/ 2>/dev/null || true
           ls -la build/
 
       - name: Deploy to builds branch

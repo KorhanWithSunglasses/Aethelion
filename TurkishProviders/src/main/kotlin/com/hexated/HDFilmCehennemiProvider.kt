@@ -13,16 +13,16 @@ import org.jsoup.nodes.Element
 
 class HDFilmCehennemiProvider : MainAPI() {
     override var name = "HDFilmCehennemi"
-    override var mainUrl = "https://www.hdfilmcehennemi.life"
+    override var mainUrl = "https://hdfilmcehennemi.to"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     private val fallbackDomains = listOf(
+        "https://hdfilmcehennemi.to",
         "https://www.hdfilmcehennemi.life",
         "https://www.hdfilmcehennemi.nl",
-        "https://www.hdfilmcehennemi.cx",
-        "https://www.hdfilmcehennemi.de"
+        "https://www.hdfilmcehennemi.net"
     )
 
     private suspend fun getUrl(): String {
@@ -46,12 +46,15 @@ class HDFilmCehennemiProvider : MainAPI() {
             "$domain/${request.data}/page/$page/"
         }
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.poster, div.movie-card, article.card, div.film-item").mapNotNull {
-            it.toSearchResult(domain)
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+            val home = doc.select("div.poster, div.movie-card, article.card, div.film-item").mapNotNull {
+                it.toSearchResult(domain)
+            }
+            newHomePageResponse(request.name, home)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
         }
-
-        return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
@@ -79,16 +82,19 @@ class HDFilmCehennemiProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
         val searchUrl = "$domain/search/$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        return doc.select("div.poster, div.movie-card, article.card, div.search-result").mapNotNull {
-            it.toSearchResult(domain)
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("div.poster, div.movie-card, article.card, div.search-result").mapNotNull {
+                it.toSearchResult(domain)
+            }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
         val domain = getUrl()
+        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = doc.selectFirst("h1, .movie-title, .title, .card-title")?.text()?.trim() ?: "Film"
         val poster = doc.selectFirst("div.poster img, .movie-poster img, meta[property=og:image], .card img")?.let {
@@ -152,7 +158,6 @@ class HDFilmCehennemiProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        // Check for subtitle tracks embedded in page
         doc.select("track[kind=subtitles], track[kind=captions]").forEach { track ->
             val subSrc = track.attr("src")
             val subLang = track.attr("label").ifEmpty { track.attr("srclang") }.ifEmpty { "Türkçe" }
@@ -161,7 +166,6 @@ class HDFilmCehennemiProvider : MainAPI() {
             }
         }
 
-        // Collect all iframes and video player tabs
         val iframes = mutableListOf<String>()
 
         doc.select("iframe").forEach { iframe ->

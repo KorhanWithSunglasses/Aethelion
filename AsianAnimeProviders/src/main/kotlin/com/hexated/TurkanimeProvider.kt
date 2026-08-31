@@ -1,27 +1,27 @@
 package com.hexated
 
-import com.hexated.core.ExtractorHelper
-
 import com.hexated.core.DynamicDomainHelper
+import com.hexated.core.ExtractorHelper
 import com.hexated.core.NetworkHelper
+import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
+import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class TurkanimeProvider : MainAPI() {
-    override var name = "Turkanime"
-    override var mainUrl = "https://www.turkanime.co"
+    override var name = "TürkAnime"
+    override var mainUrl = "https://www.turkanime.tv"
     override var lang = "tr"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie)
+    override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)
 
     private val fallbackDomains = listOf(
+        "https://www.turkanime.tv",
         "https://www.turkanime.co",
-        "https://www.turkanime.net",
-        "https://www.turkanime.tv"
+        "https://turkanime.tv"
     )
 
     private suspend fun getUrl(): String {
@@ -30,88 +30,97 @@ class TurkanimeProvider : MainAPI() {
 
     override val mainPage = mainPageOf(
         "" to "Son Eklenen Bölümler",
-        "anime/populer" to "Popüler Animeler",
-        "anime/filmler" to "Anime Filmleri"
+        "anime-listesi" to "Anime Listesi",
+        "populer-animeler" to "Popüler Animeler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            "$domain/${request.data}"
+            if (request.data.isEmpty()) domain else "$domain/${request.data}"
         } else {
             "$domain/${request.data}?sayfa=$page"
         }
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.panel-body div.col-md-3, div.anime-kutu, div.poster, article").mapNotNull {
-            it.toSearchResult()
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+            val home = doc.select("div.panel-body div.col-md-3, div.anime-card, div.box, article").mapNotNull {
+                it.toSearchResult(domain)
+            }
+            newHomePageResponse(request.name, home)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
         }
-
-        return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .panel-title, .anime-adi, a")?.text()?.trim() ?: return null
-        val href = this.selectFirst("a")?.attr("href") ?: return null
+    private fun Element.toSearchResult(domain: String): SearchResponse? {
+        val title = this.selectFirst("h4, h3, .title, a")?.text()?.trim() ?: return null
+        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
         val posterUrl = this.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }
         }
 
-        val isMovie = href.contains("-film")
-        val type = if (isMovie) TvType.AnimeMovie else TvType.Anime
-
-        return if (type == TvType.AnimeMovie) {
-            newMovieSearchResponse(title, href, type) {
-                this.posterUrl = posterUrl
-            }
-        } else {
-            newAnimeSearchResponse(title, href, type) {
-                this.posterUrl = posterUrl
-            }
+        return newAnimeSearchResponse(title, href, TvType.Anime) {
+            this.posterUrl = posterUrl
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
-        val searchUrl = "$domain/arama?q=$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        return doc.select("div.panel-body div.col-md-3, div.anime-kutu, div.search-result").mapNotNull {
-            it.toSearchResult()
+        val searchUrl = "$domain/arama?arama=$query"
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("div.panel-body div.col-md-3, div.anime-card, article").mapNotNull {
+                it.toSearchResult(domain)
+            }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
+        val domain = getUrl()
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .panel-title, .anime-title")?.text()?.trim() ?: "Bilinmeyen Anime"
-        val poster = doc.selectFirst("div.panel-body img.img-responsive, .anime-afis img, meta[property=og:image]")?.let {
+        val title = doc.selectFirst("h1, .panel-title, .title")?.text()?.trim() ?: "Anime"
+        val poster = doc.selectFirst("div.panel-body img, meta[property=og:image]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.ozet, div.panel-body p, .story")?.text()?.trim()
-        val year = doc.selectFirst(".yil, .release-year")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        
-        val tags = doc.select("div.turler a, div.genres a").map { it.text().trim() }
+        val description = doc.selectFirst("div.panel-body p, .summary, .description")?.text()?.trim()
+        val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
+        val tags = doc.select("div.panel-body a[href*=tur/]").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
-        doc.select("div#bolumler a, li.bolum, a.bolum-link, div.episode-list a").forEachIndexed { index, ep ->
-            val epHref = ep.attr("href")
-            val epName = ep.text().trim().ifEmpty { "${index + 1}. Bölüm" }
-            val epNum = Regex("""(\d+)\.\s*bölüm""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
+        doc.select("div.bolumler a, ul.episodes li a, a[href*=bolum]").forEachIndexed { index, epLink ->
+            val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
+            val epTitle = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
+            val epNumber = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
+            val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
 
             episodes.add(
                 newEpisode(epHref) {
-                    this.name = epName
-                    this.episode = epNum
+                    this.name = epTitle
+                    this.season = seasonNumber
+                    this.episode = epNumber
+                    this.posterUrl = poster
                 }
             )
+        }
+
+        if (episodes.isEmpty()) {
+            episodes.add(newEpisode(url) {
+                this.name = "1. Bölüm"
+                this.season = 1
+                this.episode = 1
+                this.posterUrl = poster
+            })
         }
 
         return newAnimeLoadResponse(title, url, TvType.Anime) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
-            
             this.tags = tags
             this.episodes = mutableMapOf(DubStatus.Subbed to episodes)
         }
@@ -125,24 +134,26 @@ class TurkanimeProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        val iframes = doc.select("iframe, div#videoplay iframe, div.player iframe").mapNotNull {
-            it.attr("data-src").ifEmpty { it.attr("src") }.takeIf { src -> src.isNotEmpty() }
-        }.toMutableList()
-
-        doc.select("div.videolar a, button.video-btn, a.dropdown-item").forEach { btn ->
-            val playerUrl = btn.attr("data-url").ifEmpty { btn.attr("data-src") }.ifEmpty { btn.attr("href") }
-            if (playerUrl.startsWith("http") || playerUrl.startsWith("//")) {
-                iframes.add(if (playerUrl.startsWith("//")) "https:$playerUrl" else playerUrl)
-            }
+        val iframes = mutableListOf<String>()
+        doc.select("iframe").forEach {
+            val src = it.attr("src").ifEmpty { it.attr("data-src") }
+            if (src.isNotEmpty()) iframes.add(src)
         }
 
-        for (iframeUrl in iframes.distinct()) {
-            val cleanUrl = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
+        val vidmoly = Vidmoly()
+        val rapidame = Rapidame()
+        val streamwish = Streamwish()
+        val closeLoad = CloseLoad()
+
+        iframes.distinct().forEach { rawUrl ->
+            val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
             when {
-                cleanUrl.contains("vidmoly") -> Vidmoly().getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("rapidame") -> Rapidame().getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, name, subtitleCallback, callback)
+                cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, "TürkAnime", subtitleCallback, callback)
             }
         }
 

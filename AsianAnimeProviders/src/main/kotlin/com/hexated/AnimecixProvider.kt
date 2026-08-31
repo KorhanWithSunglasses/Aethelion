@@ -13,15 +13,15 @@ import org.jsoup.nodes.Element
 
 class AnimecixProvider : MainAPI() {
     override var name = "Animecix"
-    override var mainUrl = "https://animecix.net"
+    override var mainUrl = "https://animecix.tv"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)
 
     private val fallbackDomains = listOf(
-        "https://animecix.net",
         "https://animecix.tv",
-        "https://animecix.com"
+        "https://animecix.com",
+        "https://animecix.net"
     )
 
     private suspend fun getUrl(): String {
@@ -45,12 +45,15 @@ class AnimecixProvider : MainAPI() {
             "$domain/${request.data}?sayfa=$page"
         }
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.anime-card, div.poster, article, div.content-item, div.film").mapNotNull {
-            it.toSearchResult(domain)
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+            val home = doc.select("div.anime-card, div.poster, article, div.content-item, div.film").mapNotNull {
+                it.toSearchResult(domain)
+            }
+            newHomePageResponse(request.name, home)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
         }
-
-        return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
@@ -69,16 +72,19 @@ class AnimecixProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
         val searchUrl = "$domain/arama?q=$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        return doc.select("div.anime-card, div.poster, article, div.search-result").mapNotNull {
-            it.toSearchResult(domain)
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("div.anime-card, div.poster, article, div.search-result").mapNotNull {
+                it.toSearchResult(domain)
+            }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
         val domain = getUrl()
+        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = doc.selectFirst("h1, .anime-title, .title")?.text()?.trim() ?: "Anime"
         val poster = doc.selectFirst("div.poster img, .anime-poster img, meta[property=og:image], .cover img")?.let {
@@ -90,7 +96,6 @@ class AnimecixProvider : MainAPI() {
 
         val episodes = mutableListOf<Episode>()
 
-        // Full Episode Parsing (Bölüm 1, Bölüm 2...)
         doc.select("div.episodes-list a, ul.bolumler li a, div.episode-item a, div.tab-content a").forEachIndexed { index, epLink ->
             val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
             val epTitle = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
@@ -133,7 +138,6 @@ class AnimecixProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        // Check for subtitles
         doc.select("track[kind=subtitles], track[kind=captions]").forEach { track ->
             val subSrc = track.attr("src")
             val subLang = track.attr("label").ifEmpty { "Türkçe" }
