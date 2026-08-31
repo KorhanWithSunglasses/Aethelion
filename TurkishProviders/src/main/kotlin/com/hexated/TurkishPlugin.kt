@@ -20,5 +20,6 @@ class TurkishPlugin : Plugin() {
         registerMainAPI(WebteIzleProvider())
         registerMainAPI(DiziBoxProvider())
         registerMainAPI(DizilabProvider())
+        registerMainAPI(JetFilmIzleProvider())
     }
 }

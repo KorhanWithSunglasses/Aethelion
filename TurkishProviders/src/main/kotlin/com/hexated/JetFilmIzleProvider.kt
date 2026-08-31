@@ -11,29 +11,32 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import org.jsoup.nodes.Element
 
-class DramacoolProvider : MainAPI() {
-    override var name = "Dramacool"
-    override var mainUrl = "https://dramacool.ch"
-    override var lang = "en"
+class JetFilmIzleProvider : MainAPI() {
+    override var name = "JetFilmİzle"
+    override var mainUrl = "https://jetfilmizle.com"
+    override var lang = "tr"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.AsianDrama)
+    override val supportedTypes = setOf(TvType.Movie)
 
     private val fallbackDomains = listOf(
-        "https://dramacool.ch",
-        "https://dramacool.sr",
-        "https://dramacool.city"
+        "https://jetfilmizle.com",
+        "https://jetfilmizle.mobi",
+        "https://jetfilmizle.ws"
     )
 
     private suspend fun getUrl(): String {
-        return DynamicDomainHelper.getActiveDomain("dramacool", fallbackDomains)
+        return DynamicDomainHelper.getActiveDomain("jetfilmizle", fallbackDomains)
     }
 
     override val mainPage = mainPageOf(
-        "" to "Recently Added",
-        "most-popular-drama" to "Popular Dramas",
-        "korean-drama" to "Korean Dramas",
-        "japanese-drama" to "Japanese Dramas",
-        "chinese-drama" to "Chinese Dramas"
+        "" to "Son Eklenen Filmler",
+        "turkce-dublaj-filmler-izle" to "Türkçe Dublaj",
+        "turkce-altyazili-filmler-izle" to "Türkçe Altyazılı",
+        "tur/aksiyon-filmleri" to "Aksiyon",
+        "tur/bilim-kurgu-filmleri" to "Bilim Kurgu",
+        "tur/komedi-filmleri" to "Komedi",
+        "tur/korku-filmleri" to "Korku",
+        "tur/animasyon-filmleri" to "Animasyon"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -41,12 +44,12 @@ class DramacoolProvider : MainAPI() {
         val url = if (page <= 1) {
             if (request.data.isEmpty()) domain else "$domain/${request.data}"
         } else {
-            "$domain/${request.data}?page=$page"
+            "$domain/${request.data}/page/$page/"
         }
 
         return try {
             val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-            val home = doc.select("ul.list-episode-item li, div.block-tab div.item, ul.switch-block li, div.poster").mapNotNull {
+            val home = doc.select("article, div.movie-card, div.poster, div.film-box, div.content-item a").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
             newHomePageResponse(request.name, home)
@@ -56,28 +59,28 @@ class DramacoolProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val title = this.selectFirst("h3.title, .title, a.title, h2, img[alt]")?.let {
-            if (it.tagName() == "img") it.attr("alt") else it.text()
-        }?.trim()?.ifEmpty { null } ?: return null
-
-        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .film-title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
 
         val posterUrl = this.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
 
-        return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) {
+        return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
-        val searchUrl = "$domain/search?type=movies&keyword=$query"
+        val searchUrl = "$domain/?s=$query"
         return try {
             val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-            doc.select("ul.list-episode-item li, div.item").mapNotNull {
+            doc.select("article, div.movie-card, div.search-result").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
         } catch (_: Exception) {
@@ -89,41 +92,15 @@ class DramacoolProvider : MainAPI() {
         val domain = getUrl()
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .title")?.text()?.trim() ?: "Drama"
-        val poster = doc.selectFirst("div.img img, .details img, meta[property=og:image]")?.let {
+        val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "Film"
+        val poster = doc.selectFirst("div.poster img, .movie-poster img, meta[property=og:image]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.info p, div.description, p")?.text()?.trim()
+        val description = doc.selectFirst("div.overview, div.description, div.entry-content p")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val tags = doc.select("div.info a[href*=genre]").map { it.text().trim() }
+        val tags = doc.select("div.genres a, .tags a").map { it.text().trim() }
 
-        val episodes = mutableListOf<Episode>()
-        doc.select("ul.list-episode-item-2 li a, ul.all-episode li a, a.episode-item").forEachIndexed { index, epLink ->
-            val rawEpHref = epLink.attr("href")
-            val epHref = if (rawEpHref.startsWith("http")) rawEpHref else "$domain$rawEpHref"
-            val epTitle = epLink.selectFirst("h3")?.text()?.trim() ?: epLink.text().trim().ifEmpty { "Episode ${index + 1}" }
-            val epNum = Regex("""(?:ep|episode)\s*(\d+)""", RegexOption.IGNORE_CASE).find(epTitle)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
-
-            episodes.add(
-                newEpisode(epHref) {
-                    this.name = epTitle
-                    this.season = 1
-                    this.episode = epNum
-                    this.posterUrl = poster
-                }
-            )
-        }
-
-        if (episodes.isEmpty()) {
-            episodes.add(newEpisode(url) {
-                this.name = "Episode 1"
-                this.season = 1
-                this.episode = 1
-                this.posterUrl = poster
-            })
-        }
-
-        return newTvSeriesLoadResponse(title, url, TvType.AsianDrama, episodes) {
+        return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.plot = description
             this.year = year
@@ -145,25 +122,25 @@ class DramacoolProvider : MainAPI() {
             if (src.isNotEmpty()) iframes.add(src)
         }
 
-        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a").forEach { tab ->
+        doc.select("div.player-tabs button, div.sources a, button[data-src]").forEach { tab ->
             val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
             if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
         }
 
-        val closeLoad = CloseLoad()
-        val streamwish = Streamwish()
         val vidmoly = Vidmoly()
         val rapidame = Rapidame()
+        val streamwish = Streamwish()
+        val closeLoad = CloseLoad()
 
         iframes.distinct().forEach { rawUrl ->
             val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
             when {
-                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
                 cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
                 cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, "Dramacool", subtitleCallback, callback)
+                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, "JetFilmİzle", subtitleCallback, callback)
             }
         }
 
