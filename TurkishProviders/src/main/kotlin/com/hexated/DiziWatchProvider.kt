@@ -18,6 +18,10 @@ class DiziWatchProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Anime)
 
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay = 50L
+    override var sequentialMainPageScrollDelay = 50L
+
     private val fallbackDomains = listOf(
         "https://diziwatch.ac",
         "https://diziwatch.net",

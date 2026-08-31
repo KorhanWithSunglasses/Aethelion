@@ -10,7 +10,6 @@ import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class DiziPalProvider : MainAPI() {
@@ -18,13 +17,19 @@ class DiziPalProvider : MainAPI() {
     override var mainUrl = "https://dizipal1577.com"
     override var lang = "tr"
     override val hasMainPage = true
-    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
+    override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
+
+    // Sequential loading prevents Cloudflare / server rate-limiting on categories
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay = 50L
+    override var sequentialMainPageScrollDelay = 50L
 
     private val fallbackDomains = listOf(
         "https://dizipal1577.com",
-        "https://dizipal2119.com",
-        "https://dizipal824.org",
-        "https://dizipal.site"
+        "https://dizipal951.com",
+        "https://dizipal824.com",
+        "https://dizipal.site",
+        "https://dizipal.plus"
     )
 
     private suspend fun getUrl(): String {
@@ -32,61 +37,61 @@ class DiziPalProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "" to "Son Eklenenler",
-        "filmler" to "Filmler",
-        "diziler" to "Diziler",
-        "tur/yerli-filmler" to "Yerli Filmler",
-        "tur/netflix" to "Netflix İçerikleri",
-        "tur/trend" to "Trend Yapımlar"
+        "diziler/son-bolumler" to "Son Bölümler",
+        "diziler" to "Yeni Diziler",
+        "filmler" to "Yeni Filmler",
+        "koleksiyon/netflix" to "Netflix İçerikleri",
+        "koleksiyon/exxen" to "Exxen İçerikleri",
+        "koleksiyon/blutv" to "BluTV",
+        "tur/trend" to "Trend Yapımlar",
+        "tur/yerli-filmler" to "Yerli Filmler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            if (request.data.isEmpty()) domain else "$domain/${request.data}"
+            "$domain/${request.data}"
         } else {
             "$domain/${request.data}/page/$page/"
         }
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        // Try NextData JSON first
-        val props = NextDataHelper.getProps(doc)
-        val homeList = mutableListOf<SearchResponse>()
-
-        props?.get("posts")?.forEach { post ->
-            val title = post.get("title")?.asText() ?: post.get("name")?.asText() ?: return@forEach
-            val slug = post.get("slug")?.asText() ?: ""
-            val isSeries = post.get("isSeries")?.asBoolean() ?: (post.get("type")?.asText() == "series") || slug.contains("dizi")
-            val href = if (slug.startsWith("http")) slug else "$domain/$slug"
-            val poster = post.get("poster")?.asText() ?: post.get("image")?.asText()
-
-            if (isSeries) {
-                homeList.add(newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = poster })
-            } else {
-                homeList.add(newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = poster })
+            // Try Next.js __NEXT_DATA__ JSON first
+            val jsonResults = NextDataHelper.extractNextData(doc.html())?.let { json ->
+                NextDataHelper.parseSearchResults(json, domain)
             }
-        }
 
-        // HTML DOM fallback
-        if (homeList.isEmpty()) {
-            doc.select("div.poster, div.movie-card, article, div.film, div.content-item").forEach { el ->
-                el.toSearchResult(domain)?.let { homeList.add(it) }
+            if (!jsonResults.isNullOrEmpty()) {
+                return newHomePageResponse(request.name, jsonResults.distinctBy { it.url })
             }
-        }
 
-        return newHomePageResponse(request.name, homeList)
+            // Fallback to DOM parsing
+            val home = doc.select("article, div.movie-card, div.poster, div.content-item, div.box, a[href*=\"/dizi/\"], a[href*=\"/film/\"]").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
+
+            newHomePageResponse(request.name, home)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
+        }
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .title, .poster-title, .name, a")?.text()?.trim() ?: return null
-        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .film-title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
         val posterUrl = this.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
 
-        val isSeries = href.contains("/dizi/") || this.selectFirst(".is-series, .badge-series, .series") != null
+        val isSeries = href.contains("/dizi/") || href.contains("sezon")
         val type = if (isSeries) TvType.TvSeries else TvType.Movie
 
         return if (type == TvType.TvSeries) {
@@ -102,76 +107,49 @@ class DiziPalProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
-        val searchUrl = "$domain/search/$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        val searchList = mutableListOf<SearchResponse>()
-        doc.select("div.poster, div.movie-card, article, div.search-result, div.film").forEach { el ->
-            el.toSearchResult(domain)?.let { searchList.add(it) }
+        val searchUrl = "$domain/?s=$query"
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("article, div.movie-card, div.search-result, a[href*=\"/dizi/\"], a[href*=\"/film/\"]").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
+        } catch (_: Exception) {
+            emptyList()
         }
-
-        return searchList
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
         val domain = getUrl()
+        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .movie-title, .title, .name")?.text()?.trim() ?: "İçerik"
-        val poster = doc.selectFirst("div.poster img, .movie-poster img, meta[property=og:image], .cover img")?.let {
+        val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "İçerik"
+        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.description, div.overview, p.story, div.summary, .plot")?.text()?.trim()
-        val year = doc.selectFirst(".year, .release-date, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val tags = doc.select("div.genres a, div.tags a, .genre a").map { it.text().trim() }
+        val description = doc.selectFirst("div.overview, div.description, .entry-content p")?.text()?.trim()
+        val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
+        val tags = doc.select("div.genres a, .tags a").map { it.text().trim() }
 
-        val isSeries = url.contains("/dizi/") || doc.select(".season-list, .episodes, .episode-item, .seasons, ul.bolumler").isNotEmpty()
+        val isSeries = url.contains("/dizi/") || doc.select("ul.episodes, div.episodes").isNotEmpty()
 
         return if (isSeries) {
             val episodes = mutableListOf<Episode>()
+            doc.select("ul.episodes li a, div.episodes a, a[href*=\"-sezon-\"], a[href*=\"-bolum\"]").forEachIndexed { index, epLink ->
+                val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
+                val epName = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
+                val seasonNum = Regex("""(?:sezon|s)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                val epNum = Regex("""(?:bolum|ep)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
 
-            // 1. Check __NEXT_DATA__ for seasons & episodes
-            val props = NextDataHelper.getProps(doc)
-            props?.get("seasons")?.forEach { seasonNode ->
-                val seasonNum = seasonNode.get("season_number")?.asInt() ?: 1
-                seasonNode.get("episodes")?.forEach { epNode ->
-                    val epNum = epNode.get("episode_number")?.asInt() ?: 1
-                    val epName = epNode.get("name")?.asText() ?: "Bölüm $epNum"
-                    val epSlug = epNode.get("slug")?.asText() ?: ""
-                    val epUrl = if (epSlug.startsWith("http")) epSlug else "$domain/$epSlug"
-                    val epPoster = epNode.get("image")?.asText() ?: poster
-
-                    episodes.add(
-                        newEpisode(epUrl) {
-                            this.name = epName
-                            this.season = seasonNum
-                            this.episode = epNum
-                            this.posterUrl = epPoster
-                        }
-                    )
-                }
+                episodes.add(
+                    newEpisode(epHref) {
+                        this.name = epName
+                        this.season = seasonNum
+                        this.episode = epNum
+                        this.posterUrl = poster
+                    }
+                )
             }
 
-            // 2. HTML DOM Fallback for Seasons and Episodes
-            if (episodes.isEmpty()) {
-                doc.select(".episode-item, .episodes a, ul.bolumler li a, div.tab-content a").forEachIndexed { index, epLink ->
-                    val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
-                    val epTitle = epLink.text().trim().ifEmpty { "Bölüm ${index + 1}" }
-                    val epNumber = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
-                    val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
-
-                    episodes.add(
-                        newEpisode(epHref) {
-                            this.name = epTitle
-                            this.season = seasonNumber
-                            this.episode = epNumber
-                            this.posterUrl = poster
-                        }
-                    )
-                }
-            }
-
-            // Fallback single episode if list is empty
             if (episodes.isEmpty()) {
                 episodes.add(newEpisode(url) {
                     this.name = "1. Bölüm"
@@ -205,20 +183,17 @@ class DiziPalProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        // Collect all iframes and video player tabs
         val iframes = mutableListOf<String>()
-
-        doc.select("iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+        doc.select("iframe").forEach {
+            val src = it.attr("src").ifEmpty { it.attr("data-src") }
             if (src.isNotEmpty()) iframes.add(src)
         }
 
-        doc.select("div.player-tabs button, div.sources a, button[data-src]").forEach { tab ->
+        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a").forEach { tab ->
             val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
-            if (src.isNotEmpty()) iframes.add(src)
+            if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
         }
 
-        // Custom Extractor Instances
         val vidmoly = Vidmoly()
         val rapidame = Rapidame()
         val streamwish = Streamwish()
@@ -232,7 +207,7 @@ class DiziPalProvider : MainAPI() {
                 cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
                 cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
                 cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziPal Oynatıcı", subtitleCallback, callback)
+                else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziPal", subtitleCallback, callback)
             }
         }
 

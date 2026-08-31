@@ -13,16 +13,22 @@ import org.jsoup.nodes.Element
 
 class HDFilmCehennemiProvider : MainAPI() {
     override var name = "HDFilmCehennemi"
-    override var mainUrl = "https://hdfilmcehennemi.to"
+    override var mainUrl = "https://www.hdfilmcehennemi.nl"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
+    // Sequential loading prevents Cloudflare / server rate-limiting on categories
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay = 50L
+    override var sequentialMainPageScrollDelay = 50L
+
     private val fallbackDomains = listOf(
-        "https://hdfilmcehennemi.to",
-        "https://www.hdfilmcehennemi.life",
         "https://www.hdfilmcehennemi.nl",
-        "https://www.hdfilmcehennemi.net"
+        "https://www.hdfilmcehennemi.life",
+        "https://hdfilmcehennemi.vip",
+        "https://hdfilmcehennemi.cx",
+        "https://hdfilmcehennemi.net"
     )
 
     private suspend fun getUrl(): String {
@@ -30,12 +36,16 @@ class HDFilmCehennemiProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "" to "Son Eklenen Filmler",
-        "diziler" to "Yabancı Diziler",
-        "tur/yerli-filmler" to "Yerli Filmler",
-        "tur/netflix-filmleri" to "Netflix Filmleri",
+        "" to "Yeni Eklenen Filmler",
+        "yabancidiziizle-2" to "Yeni Eklenen Diziler",
+        "category/tavsiye-filmler-izle2" to "Tavsiye Filmler",
         "imdb-7-puan-uzeri-filmler" to "IMDb 7+ Filmler",
-        "tur/animasyon" to "Animasyon Filmleri"
+        "en-cok-yorumlananlar-1" to "En Çok Yorumlananlar",
+        "en-cok-begenilen-filmleri-izle" to "En Çok Beğenilenler",
+        "tur/aile-filmleri-izleyin-6" to "Aile Filmleri",
+        "tur/aksiyon-filmleri-izleyin-4" to "Aksiyon Filmleri",
+        "tur/animasyon-filmleri-izle-1" to "Animasyon Filmleri",
+        "tur/komedi-filmleri-izleyin-1" to "Komedi Filmleri"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -48,9 +58,10 @@ class HDFilmCehennemiProvider : MainAPI() {
 
         return try {
             val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-            val home = doc.select("div.poster, div.movie-card, article.card, div.film-item").mapNotNull {
+            val home = doc.select("div.card, div.poster, article, div.movie-card, div.film-item, a[href*=\"-izle\"]").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
+
             newHomePageResponse(request.name, home)
         } catch (_: Exception) {
             newHomePageResponse(request.name, emptyList())
@@ -58,14 +69,19 @@ class HDFilmCehennemiProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .poster-title, .title, a.card-title")?.text()?.trim() ?: return null
-        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .card-title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
         val posterUrl = this.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
 
-        val isSeries = href.contains("/dizi/") || this.selectFirst(".is-series, .badge-series") != null
+        val isSeries = href.contains("dizi") || href.contains("sezon")
         val type = if (isSeries) TvType.TvSeries else TvType.Movie
 
         return if (type == TvType.TvSeries) {
@@ -81,12 +97,12 @@ class HDFilmCehennemiProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
-        val searchUrl = "$domain/search/$query"
+        val searchUrl = "$domain/?s=$query"
         return try {
             val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-            doc.select("div.poster, div.movie-card, article.card, div.search-result").mapNotNull {
+            doc.select("div.card, div.poster, article, div.movie-card, div.search-result").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
         } catch (_: Exception) {
             emptyList()
         }
@@ -96,30 +112,29 @@ class HDFilmCehennemiProvider : MainAPI() {
         val domain = getUrl()
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-        val title = doc.selectFirst("h1, .movie-title, .title, .card-title")?.text()?.trim() ?: "Film"
-        val poster = doc.selectFirst("div.poster img, .movie-poster img, meta[property=og:image], .card img")?.let {
+        val title = doc.selectFirst("h1, .card-title, .title")?.text()?.trim() ?: "Film"
+        val poster = doc.selectFirst("div.poster img, .card img, meta[property=og:image]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.description, div.overview, p.story, div.summary, .movie-story")?.text()?.trim()
-        val year = doc.selectFirst(".year, .release-date, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val tags = doc.select("div.genres a, div.tags a, .genre a").map { it.text().trim() }
+        val description = doc.selectFirst("div.overview, div.description, div.card-body p, p")?.text()?.trim()
+        val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
+        val tags = doc.select("div.genres a, .tags a, div.card-category a").map { it.text().trim() }
 
-        val isSeries = url.contains("/dizi/") || doc.select(".season-list, .episodes, .episode-item, .seasons, ul.bolumler").isNotEmpty()
+        val isSeries = url.contains("dizi") || doc.select("div.episodes, ul.episodes, a[href*=bolum]").isNotEmpty()
 
         return if (isSeries) {
             val episodes = mutableListOf<Episode>()
-
-            doc.select(".episode-item, .episodes a, ul.bolumler li a, div.tab-content a, .season-list a").forEachIndexed { index, epLink ->
+            doc.select("ul.episodes li a, div.episodes a, a[href*=\"-sezon-\"], a[href*=\"-bolum\"]").forEachIndexed { index, epLink ->
                 val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
-                val epTitle = epLink.text().trim().ifEmpty { "Bölüm ${index + 1}" }
-                val epNumber = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
-                val seasonNumber = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epTitle)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
+                val epName = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
+                val seasonNum = Regex("""(?:sezon|s)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+                val epNum = Regex("""(?:bolum|ep)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull() ?: (index + 1)
 
                 episodes.add(
                     newEpisode(epHref) {
-                        this.name = epTitle
-                        this.season = seasonNumber
-                        this.episode = epNumber
+                        this.name = epName
+                        this.season = seasonNum
+                        this.episode = epNum
                         this.posterUrl = poster
                     }
                 )
@@ -158,22 +173,13 @@ class HDFilmCehennemiProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        doc.select("track[kind=subtitles], track[kind=captions]").forEach { track ->
-            val subSrc = track.attr("src")
-            val subLang = track.attr("label").ifEmpty { track.attr("srclang") }.ifEmpty { "Türkçe" }
-            if (subSrc.isNotEmpty()) {
-                subtitleCallback.invoke(SubtitleFile(lang = subLang, url = subSrc))
-            }
-        }
-
         val iframes = mutableListOf<String>()
-
-        doc.select("iframe").forEach { iframe ->
-            val src = iframe.attr("src").ifEmpty { iframe.attr("data-src") }
+        doc.select("iframe").forEach {
+            val src = it.attr("src").ifEmpty { it.attr("data-src") }
             if (src.isNotEmpty()) iframes.add(src)
         }
 
-        doc.select("nav.nav-tabs a, div.player-tabs button, div.sources a, button[data-src]").forEach { tab ->
+        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a").forEach { tab ->
             val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
             if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
         }

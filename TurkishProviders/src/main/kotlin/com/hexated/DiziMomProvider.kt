@@ -18,6 +18,10 @@ class DiziMomProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay = 50L
+    override var sequentialMainPageScrollDelay = 50L
+
     private val fallbackDomains = listOf(
         "https://dizimom.org",
         "https://dizimom.tv",

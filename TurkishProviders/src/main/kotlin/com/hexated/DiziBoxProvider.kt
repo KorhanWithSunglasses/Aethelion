@@ -18,11 +18,22 @@ class DiziBoxProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
+    // Sequential loading prevents Cloudflare / server rate-limiting on categories
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay = 50L
+    override var sequentialMainPageScrollDelay = 50L
+
+    private val authCookies = mapOf(
+        "LockUser" to "true",
+        "isTrustedUser" to "true",
+        "dbxu" to "1722403730363"
+    )
+
     private val fallbackDomains = listOf(
         "https://www.dizibox.net",
+        "https://www.dizibox.live",
         "https://www.dizibox.pw",
-        "https://www.dizibox.top",
-        "https://dizibox.tv"
+        "https://www.dizibox.tv"
     )
 
     private suspend fun getUrl(): String {
@@ -32,22 +43,39 @@ class DiziBoxProvider : MainAPI() {
     override val mainPage = mainPageOf(
         "" to "Son Eklenen Bölümler",
         "dizi-arsivi" to "Dizi Arşivi",
-        "tur/trend" to "Popüler Diziler"
+        "dizi-arsivi/?tur[0]=aksiyon" to "Aksiyon",
+        "dizi-arsivi/?tur[0]=bilimkurgu" to "Bilim Kurgu",
+        "dizi-arsivi/?tur[0]=komedi" to "Komedi",
+        "dizi-arsivi/?tur[0]=dram" to "Dram",
+        "dizi-arsivi/?tur[0]=korku" to "Korku",
+        "dizi-arsivi/?tur[0]=animasyon" to "Animasyon",
+        "dizi-arsivi/?ulke[]=turkiye" to "Yerli Diziler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            if (request.data.isEmpty()) domain else "$domain/${request.data}"
+            if (request.data.isEmpty()) domain else if (request.data.startsWith("http")) request.data else "$domain/${request.data}"
         } else {
-            "$domain/${request.data}/page/$page/"
+            if (request.data.contains("?")) {
+                val parts = request.data.split("?")
+                "$domain/${parts[0]}/page/$page/?${parts[1]}"
+            } else {
+                "$domain/${request.data}/page/$page/"
+            }
         }
 
         return try {
-            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-            val home = doc.select("article, div.post, div.movie-card, div.box, div.film").mapNotNull {
+            val doc = app.get(
+                url,
+                cookies = authCookies,
+                headers = NetworkHelper.defaultHeaders
+            ).document
+
+            val home = doc.select("article, div.post, div.movie-card, div.content-item, div.box, a[href*=\"/dizi/\"]").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
+
             newHomePageResponse(request.name, home)
         } catch (_: Exception) {
             newHomePageResponse(request.name, emptyList())
@@ -55,9 +83,14 @@ class DiziBoxProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .title, .post-title, a")?.text()?.trim() ?: return null
-        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .post-title, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
         val posterUrl = this.selectFirst("img")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("data-lazy-src") }
         }
@@ -71,10 +104,15 @@ class DiziBoxProvider : MainAPI() {
         val domain = getUrl()
         val searchUrl = "$domain/?s=$query"
         return try {
-            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-            doc.select("article, div.post, div.search-result, div.box").mapNotNull {
+            val doc = app.get(
+                searchUrl,
+                cookies = authCookies,
+                headers = NetworkHelper.defaultHeaders
+            ).document
+
+            doc.select("article, div.post, div.search-result, a[href*=\"/dizi/\"]").mapNotNull {
                 it.toSearchResult(domain)
-            }
+            }.distinctBy { it.url }
         } catch (_: Exception) {
             emptyList()
         }
@@ -82,26 +120,36 @@ class DiziBoxProvider : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val domain = getUrl()
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+        val doc = app.get(
+            url,
+            cookies = authCookies,
+            headers = NetworkHelper.defaultHeaders
+        ).document
 
-        val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "Dizi"
-        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image]")?.let {
+        val title = doc.selectFirst("h1, .tv-overview h1, .title")?.text()?.trim() ?: "Dizi"
+        val poster = doc.selectFirst("div.tv-overview figure img, div.poster img, meta[property=og:image]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.overview, div.description, .entry-content p")?.text()?.trim()
+        val description = doc.selectFirst("div.tv-story p, div.overview, div.description")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
-        val tags = doc.select("div.genres a, .tags a").map { it.text().trim() }
+        val tags = doc.select("div.genres a, .tags a, div.tv-extra a").map { it.text().trim() }
 
         val episodes = mutableListOf<Episode>()
-        doc.select("ul.episodes li a, div.episode-item a, div.episodes a, a.episode-link").forEachIndexed { index, ep ->
-            val epHref = ep.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
-            val epName = ep.text().trim().ifEmpty { "${index + 1}. Bölüm" }
-            val seasonNum = Regex("""(\d+)\.\s*Sezon|Sezon\s*(\d+)""").find(epName)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: 1
-            val epNum = Regex("""(\d+)\.\s*Bölüm|Bölüm\s*(\d+)""").find(epName)?.groupValues?.filter { it.isNotEmpty() }?.lastOrNull()?.toIntOrNull() ?: (index + 1)
+        doc.select("ul.episodes li a, div.episodes a, a[href*=\"-sezon-\"], a[href*=\"-bolum\"]").forEachIndexed { index, epLink ->
+            val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
+            val epText = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
+
+            val seasonNum = Regex("""(?:sezon|s)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("""(\d+)\.\s*Sezon""").find(epText)?.groupValues?.get(1)?.toIntOrNull()
+                ?: 1
+
+            val epNum = Regex("""(?:bolum|ep)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("""(\d+)\.\s*Bölüm""").find(epText)?.groupValues?.get(1)?.toIntOrNull()
+                ?: (index + 1)
 
             episodes.add(
                 newEpisode(epHref) {
-                    this.name = epName
+                    this.name = epText
                     this.season = seasonNum
                     this.episode = epNum
                     this.posterUrl = poster
@@ -132,12 +180,21 @@ class DiziBoxProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
+        val doc = app.get(
+            data,
+            cookies = authCookies,
+            headers = NetworkHelper.defaultHeaders
+        ).document
 
         val iframes = mutableListOf<String>()
         doc.select("iframe").forEach {
             val src = it.attr("src").ifEmpty { it.attr("data-src") }
             if (src.isNotEmpty()) iframes.add(src)
+        }
+
+        doc.select("div.video-player iframe, div.player iframe, div.source-item a").forEach { el ->
+            val src = el.attr("data-src").ifEmpty { el.attr("src") }.ifEmpty { el.attr("href") }
+            if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
         }
 
         val vidmoly = Vidmoly()
