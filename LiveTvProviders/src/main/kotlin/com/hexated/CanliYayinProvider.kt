@@ -106,15 +106,16 @@ class CanliYayinProvider : MainAPI() {
             ?: return false
 
         callback(
-            ExtractorLink(
-                source = name,
-                name = "Canlı Yayın HD",
-                url = m3u8Url,
-                referer = data,
-                quality = Qualities.P1080.value,
-                type = ExtractorLinkType.M3U8,
-                headers = NetworkHelper.getStreamHeaders(data, data)
-            )
+            newExtractorLink(
+                name,
+                "Canlı Yayın HD",
+                m3u8Url,
+                data,
+                Qualities.P1080.value,
+                ExtractorLinkType.M3U8
+            ) {
+                this.headers = NetworkHelper.getStreamHeaders(data, data)
+            }
         )
         return true
     }

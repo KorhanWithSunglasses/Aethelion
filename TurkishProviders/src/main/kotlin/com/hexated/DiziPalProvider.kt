@@ -58,16 +58,6 @@ class DiziPalProvider : MainAPI() {
         return try {
             val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-            // Try Next.js __NEXT_DATA__ JSON first
-            val jsonResults = NextDataHelper.extractNextData(doc.html())?.let { json ->
-                NextDataHelper.parseSearchResults(json, domain)
-            }
-
-            if (!jsonResults.isNullOrEmpty()) {
-                return newHomePageResponse(request.name, jsonResults.distinctBy { it.url })
-            }
-
-            // Fallback to DOM parsing
             val home = doc.select("article, div.movie-card, div.poster, div.content-item, div.box, a[href*=\"/dizi/\"], a[href*=\"/film/\"]").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
