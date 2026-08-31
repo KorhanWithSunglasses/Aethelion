@@ -3,7 +3,6 @@ package com.hexated
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.ExtractorHelper
 import com.hexated.core.NetworkHelper
-import com.hexated.core.NextDataHelper
 import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
 import com.hexated.extractors.Streamwish
@@ -14,22 +13,20 @@ import org.jsoup.nodes.Element
 
 class DiziPalProvider : MainAPI() {
     override var name = "DiziPal"
-    override var mainUrl = "https://dizipal1577.com"
+    override var mainUrl = "https://dizipalw.com"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
-    // Sequential loading prevents Cloudflare / server rate-limiting on categories
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 50L
     override var sequentialMainPageScrollDelay = 50L
 
     private val fallbackDomains = listOf(
-        "https://dizipal1577.com",
-        "https://dizipal951.com",
-        "https://dizipal824.com",
+        "https://dizipalw.com",
         "https://dizipal.site",
-        "https://dizipal.plus"
+        "https://dizipal105.vip",
+        "https://dizipal.me"
     )
 
     private suspend fun getUrl(): String {
@@ -37,14 +34,10 @@ class DiziPalProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "diziler/son-bolumler" to "Son Bölümler",
+        "trendler" to "Trend Yapımlar",
         "diziler" to "Yeni Diziler",
         "filmler" to "Yeni Filmler",
-        "koleksiyon/netflix" to "Netflix İçerikleri",
-        "koleksiyon/exxen" to "Exxen İçerikleri",
-        "koleksiyon/blutv" to "BluTV",
-        "tur/trend" to "Trend Yapımlar",
-        "tur/yerli-filmler" to "Yerli Filmler"
+        "anime" to "Animeler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -58,7 +51,7 @@ class DiziPalProvider : MainAPI() {
         return try {
             val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
-            val home = doc.select("article, div.movie-card, div.poster, div.content-item, div.box, a[href*=\"/dizi/\"], a[href*=\"/film/\"]").mapNotNull {
+            val home = doc.select("a[href*=\"/dizi/\"], a[href*=\"/film/\"], div.item, div.movie-item, article").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
 
@@ -70,7 +63,7 @@ class DiziPalProvider : MainAPI() {
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
         val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
-        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#") || rawHref.contains("wp-login") || rawHref.contains("uye")) return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
 
         val title = this.selectFirst("h2, h3, .title, .film-title, img[alt]")?.let {
@@ -85,11 +78,11 @@ class DiziPalProvider : MainAPI() {
         val type = if (isSeries) TvType.TvSeries else TvType.Movie
 
         return if (type == TvType.TvSeries) {
-            newTvSeriesSearchResponse(title, href, type) {
+            newTvSeriesSearchResponse(title.lines().first().trim(), href, type) {
                 this.posterUrl = posterUrl
             }
         } else {
-            newMovieSearchResponse(title, href, type) {
+            newMovieSearchResponse(title.lines().first().trim(), href, type) {
                 this.posterUrl = posterUrl
             }
         }
@@ -100,7 +93,7 @@ class DiziPalProvider : MainAPI() {
         val searchUrl = "$domain/?s=$query"
         return try {
             val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-            doc.select("article, div.movie-card, div.search-result, a[href*=\"/dizi/\"], a[href*=\"/film/\"]").mapNotNull {
+            doc.select("a[href*=\"/dizi/\"], a[href*=\"/film/\"], div.item, div.search-result").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
         } catch (_: Exception) {
@@ -113,18 +106,18 @@ class DiziPalProvider : MainAPI() {
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = doc.selectFirst("h1, .entry-title, .title")?.text()?.trim() ?: "İçerik"
-        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image]")?.let {
+        val poster = doc.selectFirst("div.poster img, .post-thumbnail img, meta[property=og:image], img[src*=\"poster\"]")?.let {
             it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.overview, div.description, .entry-content p")?.text()?.trim()
+        val description = doc.selectFirst("div.overview, div.description, .entry-content p, p")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
         val tags = doc.select("div.genres a, .tags a").map { it.text().trim() }
 
-        val isSeries = url.contains("/dizi/") || doc.select("ul.episodes, div.episodes").isNotEmpty()
+        val isSeries = url.contains("/dizi/") || doc.select("ul.episodes, div.episodes, a[href*=bolum]").isNotEmpty()
 
         return if (isSeries) {
             val episodes = mutableListOf<Episode>()
-            doc.select("ul.episodes li a, div.episodes a, a[href*=\"-sezon-\"], a[href*=\"-bolum\"]").forEachIndexed { index, epLink ->
+            doc.select("ul.episodes li a, div.episodes a, a[href*=\"-sezon-\"], a[href*=\"-bolum\"], a[href*=\"/bolum/\"]").forEachIndexed { index, epLink ->
                 val epHref = epLink.attr("href").let { if (it.startsWith("http")) it else "$domain$it" }
                 val epName = epLink.text().trim().ifEmpty { "${index + 1}. Bölüm" }
                 val seasonNum = Regex("""(?:sezon|s)-?(\d+)""", RegexOption.IGNORE_CASE).find(epHref)?.groupValues?.get(1)?.toIntOrNull() ?: 1
@@ -179,7 +172,7 @@ class DiziPalProvider : MainAPI() {
             if (src.isNotEmpty()) iframes.add(src)
         }
 
-        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a").forEach { tab ->
+        doc.select("div.player-tabs button, div.sources a, button[data-src], div.video-players a, div.server a").forEach { tab ->
             val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
             if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
         }

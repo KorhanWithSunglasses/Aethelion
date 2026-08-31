@@ -13,12 +13,11 @@ import org.jsoup.nodes.Element
 
 class DiziBoxProvider : MainAPI() {
     override var name = "DiziBox"
-    override var mainUrl = "https://www.dizibox.net"
+    override var mainUrl = "https://www.dizibox.live"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    // Sequential loading prevents Cloudflare / server rate-limiting on categories
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 50L
     override var sequentialMainPageScrollDelay = 50L
@@ -30,8 +29,8 @@ class DiziBoxProvider : MainAPI() {
     )
 
     private val fallbackDomains = listOf(
-        "https://www.dizibox.net",
         "https://www.dizibox.live",
+        "https://www.dizibox.net",
         "https://www.dizibox.pw",
         "https://www.dizibox.tv"
     )
@@ -41,21 +40,20 @@ class DiziBoxProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "" to "Son Eklenen Bölümler",
-        "dizi-arsivi" to "Dizi Arşivi",
-        "dizi-arsivi/?tur[0]=aksiyon" to "Aksiyon",
-        "dizi-arsivi/?tur[0]=bilimkurgu" to "Bilim Kurgu",
-        "dizi-arsivi/?tur[0]=komedi" to "Komedi",
-        "dizi-arsivi/?tur[0]=dram" to "Dram",
-        "dizi-arsivi/?tur[0]=korku" to "Korku",
-        "dizi-arsivi/?tur[0]=animasyon" to "Animasyon",
-        "dizi-arsivi/?ulke[]=turkiye" to "Yerli Diziler"
+        "arsiv" to "Dizi Arşivi",
+        "arsiv/?tur[0]=aksiyon" to "Aksiyon",
+        "arsiv/?tur[0]=bilimkurgu" to "Bilim Kurgu",
+        "arsiv/?tur[0]=komedi" to "Komedi",
+        "arsiv/?tur[0]=dram" to "Dram",
+        "arsiv/?tur[0]=korku" to "Korku",
+        "arsiv/?tur[0]=animasyon" to "Animasyon",
+        "arsiv/?ulke[]=turkiye" to "Yerli Diziler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            if (request.data.isEmpty()) domain else if (request.data.startsWith("http")) request.data else "$domain/${request.data}"
+            if (request.data.isEmpty()) "$domain/arsiv" else "$domain/${request.data}"
         } else {
             if (request.data.contains("?")) {
                 val parts = request.data.split("?")
@@ -72,7 +70,7 @@ class DiziBoxProvider : MainAPI() {
                 headers = NetworkHelper.defaultHeaders
             ).document
 
-            val home = doc.select("article, div.post, div.movie-card, div.content-item, div.box, a[href*=\"/dizi/\"]").mapNotNull {
+            val home = doc.select("div.detailed-article, article, div.post, a[href*=\"/diziler/\"], a[href*=\"/dizi/\"]").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
 
@@ -84,7 +82,7 @@ class DiziBoxProvider : MainAPI() {
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
         val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
-        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#") || rawHref.contains("wp-login") || rawHref.contains("yardim")) return null
         val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
 
         val title = this.selectFirst("h2, h3, .title, .post-title, img[alt]")?.let {
@@ -110,7 +108,7 @@ class DiziBoxProvider : MainAPI() {
                 headers = NetworkHelper.defaultHeaders
             ).document
 
-            doc.select("article, div.post, div.search-result, a[href*=\"/dizi/\"]").mapNotNull {
+            doc.select("div.detailed-article, article, div.post, a[href*=\"/diziler/\"], a[href*=\"/dizi/\"]").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
         } catch (_: Exception) {
