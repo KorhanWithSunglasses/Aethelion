@@ -1,7 +1,7 @@
 import com.android.build.gradle.BaseExtension
 import com.lagradost.cloudstream3.gradle.CloudstreamExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 buildscript {
     repositories {
@@ -42,26 +42,27 @@ subprojects {
 
     android {
         namespace = "com.hexated.${project.name.lowercase()}"
-        compileSdkVersion(34)
 
         defaultConfig {
             minSdk = 21
-            targetSdk = 34
+            compileSdkVersion(35)
+            targetSdk = 35
         }
 
         compileOptions {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
-    }
 
-    tasks.withType<KotlinCompile>().configureEach {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_1_8)
-            freeCompilerArgs.addAll(
-                "-opt-in=kotlin.RequiresOptIn",
-                "-Xskip-metadata-version-check"
-            )
+        tasks.withType<KotlinJvmCompile> {
+            compilerOptions {
+                jvmTarget.set(JvmTarget.JVM_1_8)
+                freeCompilerArgs.addAll(
+                    "-Xno-call-assertions",
+                    "-Xno-param-assertions",
+                    "-Xno-receiver-assertions"
+                )
+            }
         }
     }
 
@@ -69,8 +70,12 @@ subprojects {
         val cloudstream by configurations
         val implementation by configurations
         cloudstream("com.lagradost:cloudstream3:pre-release")
-        implementation("org.jsoup:jsoup:1.17.2")
+        implementation("org.jsoup:jsoup:1.18.3")
         implementation("com.github.Blatzar:NiceHttp:0.4.11")
         implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.16.1")
     }
+}
+
+task<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
