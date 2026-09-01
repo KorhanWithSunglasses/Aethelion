@@ -1,6 +1,7 @@
 package com.hexated.extractors
 
 import com.hexated.core.JsUnpacker
+import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
@@ -23,15 +24,23 @@ open class Vidmoly : ExtractorApi() {
         try {
             val response = app.get(
                 url,
-                headers = mapOf("Referer" to (referer ?: mainUrl))
+                headers = mapOf(
+                    "User-Agent" to NetworkHelper.USER_AGENT,
+                    "Referer" to (referer ?: mainUrl)
+                )
             ).text
 
             val unpacked = JsUnpacker.unpackAndCombine(response) ?: response
-            val m3u8Match = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""").find(unpacked)
-                ?: Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+            var m3u8Url = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""").find(unpacked)?.groupValues?.get(1)
+                ?: Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)?.groupValues?.get(1)
 
-            m3u8Match?.let { match ->
-                val streamUrl = match.groupValues[1]
+            if (m3u8Url == null && (url.contains("molystream") || url.contains("vidmoly"))) {
+                if (url.contains("/embed/") && !url.contains("/embed/sheila/")) {
+                    m3u8Url = url.replace("/embed/", "/embed/sheila/")
+                }
+            }
+
+            m3u8Url?.let { streamUrl ->
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
@@ -41,6 +50,11 @@ open class Vidmoly : ExtractorApi() {
                     ) {
                         this.referer = url
                         this.quality = Qualities.P1080.value
+                        this.headers = mapOf(
+                            "User-Agent" to NetworkHelper.USER_AGENT,
+                            "Referer" to url,
+                            "Origin" to (if (url.contains("/embed")) url.substringBefore("/embed") else url)
+                        )
                     }
                 )
             }
