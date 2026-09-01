@@ -63,7 +63,7 @@ class FullHDFilmizleseneProvider : MainAPI() {
         val description = document.selectFirst("div.ozet, div.description, p.description")?.text()?.trim()
         val year = document.selectFirst("span.year, a[href*='/yil/']")?.text()?.filter { it.isDigit() }?.toIntOrNull()
         val tags = document.select("span.genre a, a[href*='/kategori/']").map { it.text().trim() }
-        val rating = document.selectFirst("span.imdb-score, span.imdb")?.text()?.trim()?.toRatingInt()
+        val rating = document.selectFirst("span.imdb-score, span.imdb")?.text()?.trim()?.toDoubleOrNull()?.times(1000)?.toInt()
         val actors = document.select("div.actors a, a[href*='/oyuncu/']").map { Actor(it.text().trim()) }
         val trailer = document.selectFirst("div.trailer iframe")?.attr("src")?.let { fixUrlNull(it) }
 

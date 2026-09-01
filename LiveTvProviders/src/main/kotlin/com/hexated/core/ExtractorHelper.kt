@@ -1,8 +1,9 @@
+@file:Suppress("DEPRECATION")
 package com.hexated.core
 
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 
@@ -25,7 +26,7 @@ object ExtractorHelper {
                     url = cleanUrl,
                     referer = referer ?: "",
                     quality = Qualities.P1080.value,
-                    type = ExtractorLinkType.M3U8,
+                    type = INFER_TYPE,
                     headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
                 )
             )
@@ -41,14 +42,14 @@ object ExtractorHelper {
                     url = cleanUrl,
                     referer = referer ?: "",
                     quality = Qualities.P1080.value,
-                    type = ExtractorLinkType.VIDEO,
+                    type = INFER_TYPE,
                     headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
                 )
             )
             return
         }
 
-        // 3. Universal CloudStream Extractor (Streamtape, Mixdrop, Sibnet, Bilibili, Upstream, etc.)
+        // 3. Universal CloudStream Extractor
         try {
             loadExtractor(
                 url = cleanUrl,

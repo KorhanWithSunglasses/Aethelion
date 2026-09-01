@@ -1,12 +1,13 @@
+@file:Suppress("DEPRECATION")
 package com.hexated.extractors
 
-import com.lagradost.cloudstream3.app
+import com.hexated.core.JsUnpacker
 import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.hexated.core.JsUnpacker
 
 open class Vidmoly : ExtractorApi() {
     override var name = "Vidmoly"
@@ -38,7 +39,7 @@ open class Vidmoly : ExtractorApi() {
                         url = streamUrl,
                         referer = url,
                         quality = Qualities.P1080.value,
-                        type = ExtractorLinkType.M3U8
+                        type = INFER_TYPE
                     )
                 )
             }

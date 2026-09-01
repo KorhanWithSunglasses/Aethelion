@@ -1,84 +1,100 @@
+@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.NetworkHelper
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import org.jsoup.nodes.Element
 
 class CanliYayinProvider : MainAPI() {
-    override var name = "Canlı Yayın & Spor"
-    override var mainUrl = "https://www.canlitv.me"
+    override var name = "Canlı Yayın"
+    override var mainUrl = "https://canlitv.center"
     override var lang = "tr"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Live)
 
     private val fallbackDomains = listOf(
-        "https://www.canlitv.me",
-        "https://www.canlitv.vin",
-        "https://taraftarium24.mobi"
+        "https://canlitv.center",
+        "https://canlitv.me",
+        "https://canlitv.plus"
     )
 
     private suspend fun getUrl(): String {
-        return DynamicDomainHelper.getActiveDomain("canlitv", fallbackDomains)
+        return DynamicDomainHelper.getActiveDomain("canliyayin", fallbackDomains)
     }
 
     override val mainPage = mainPageOf(
-        "" to "Tüm Canlı Kanallar",
-        "kategori/spor" to "Spor Yayınları",
-        "kategori/ulusal" to "Ulusal Kanallar"
+        "" to "Tüm Kanallar",
+        "ulusal-kanallar" to "Ulusal Kanallar",
+        "haber-kanallari" to "Haber Kanalları",
+        "spor-kanallari" to "Spor Kanalları",
+        "sinema-dizi-kanallari" to "Sinema & Dizi",
+        "belgesel-kanallari" to "Belgesel Kanalları",
+        "cocuk-kanallari" to "Çocuk Kanalları",
+        "muzik-kanallari" to "Müzik Kanalları"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
-        val url = if (page <= 1) {
-            "$domain/${request.data}"
-        } else {
-            "$domain/${request.data}?sayfa=$page"
-        }
+        val url = if (request.data.isEmpty()) domain else "$domain/${request.data}"
 
-        val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-        val home = doc.select("div.kanal-kutu, div.channel-card, article").mapNotNull {
-            it.toSearchResult()
-        }
+        return try {
+            val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
+            val channels = doc.select("div.channel-item, a.channel-card, div.tv-card, a[href*=\"canli-tv\"]").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
 
-        return newHomePageResponse(request.name, home)
+            newHomePageResponse(request.name, channels)
+        } catch (_: Exception) {
+            newHomePageResponse(request.name, emptyList())
+        }
     }
 
-    private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h2, h3, .kanal-adi, .title, a")?.text()?.trim() ?: return null
-        val href = this.selectFirst("a")?.attr("href") ?: return null
-        val posterUrl = this.selectFirst("img")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }
+    private fun Element.toSearchResult(domain: String): SearchResponse? {
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        if (rawHref.contains("javascript:") || rawHref.startsWith("#")) return null
+        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+
+        val title = this.selectFirst("h2, h3, .title, .channel-name, img[alt]")?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
+
+        val posterUrl = this.selectFirst("img")?.let { img ->
+            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }
+            val src = img.attr("src")
+            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) dataSrc else src
         }
 
-        return newLiveSearchResponse(title, href, TvType.Live) {
+        return newLiveStreamSearchResponse(title, href, TvType.Live) {
             this.posterUrl = posterUrl
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val domain = getUrl()
-        val searchUrl = "$domain/ara?q=$query"
-        val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
-
-        return doc.select("div.kanal-kutu, div.channel-card, article, div.search-result").mapNotNull {
-            it.toSearchResult()
+        val searchUrl = "$domain/?s=$query"
+        return try {
+            val doc = app.get(searchUrl, headers = NetworkHelper.defaultHeaders).document
+            doc.select("div.channel-item, a.channel-card, div.tv-card, a[href*=\"canli-tv\"]").mapNotNull {
+                it.toSearchResult(domain)
+            }.distinctBy { it.url }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
     override suspend fun load(url: String): LoadResponse {
         val doc = app.get(url, headers = NetworkHelper.defaultHeaders).document
-
-        val title = doc.selectFirst("h1, .kanal-baslik")?.text()?.trim() ?: "Canlı TV"
-        val poster = doc.selectFirst("div.kanal-logo img, meta[property=og:image]")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
+        val title = doc.selectFirst("h1, .channel-title, .title")?.text()?.trim() ?: "Canlı TV"
+        val poster = doc.selectFirst("div.channel-logo img, .poster img, meta[property=og:image]")?.let {
+            it.attr("src").ifEmpty { it.attr("content") }
         }
-        val description = doc.selectFirst("div.kanal-aciklama, p.desc")?.text()?.trim()
+        val description = doc.selectFirst("div.channel-info, div.description, p")?.text()?.trim() ?: "Canlı Yayın"
 
-        return newLiveStreamLoadResponse(title, url, url) {
+        return newLiveStreamLoadResponse(title, url, TvType.Live, url) {
             this.posterUrl = poster
             this.plot = description
         }
@@ -92,10 +108,9 @@ class CanliYayinProvider : MainAPI() {
     ): Boolean {
         val doc = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
-        val iframeUrl = doc.selectFirst("iframe#tv-frame, div.player iframe")?.attr("src")
-        val streamPage = if (iframeUrl != null) {
-            val clean = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
-            app.get(clean, headers = NetworkHelper.getRefererHeaders(data)).text
+        val iframeSrc = doc.selectFirst("iframe")?.attr("src")
+        val streamPage = if (!iframeSrc.isNullOrEmpty() && iframeSrc.startsWith("http")) {
+            app.get(iframeSrc, headers = NetworkHelper.getRefererHeaders(data)).text
         } else {
             doc.html()
         }
@@ -112,7 +127,7 @@ class CanliYayinProvider : MainAPI() {
                 url = m3u8Url,
                 referer = data,
                 quality = Qualities.P1080.value,
-                type = ExtractorLinkType.M3U8,
+                type = INFER_TYPE,
                 headers = NetworkHelper.getStreamHeaders(data, data)
             )
         )
