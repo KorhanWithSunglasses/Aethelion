@@ -1,5 +1,8 @@
 package com.hexated
 
+import com.hexated.core.ImageHelper
+import com.hexated.core.NetworkHelper
+import com.hexated.core.fixUrl
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
@@ -33,7 +36,7 @@ class FilmMakinesiProvider : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}").document
+        val document = app.get("${request.data}${page}", headers = NetworkHelper.defaultHeaders).document
         val home = if (request.data.contains("/film-izle/")) {
             document.select("section#film_posts article").mapNotNull { it.toSearchResult() }
         } else {
@@ -44,11 +47,9 @@ class FilmMakinesiProvider : MainAPI() {
 
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.selectFirst("h6 a, h2 a, a.title")?.text()?.trim() ?: return null
-        val href = fixUrlNull(this.selectFirst("h6 a, h2 a, a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(
-            this.selectFirst("img")?.attr("data-src")
-                ?: this.selectFirst("img")?.attr("src")
-        )
+        val rawHref = this.selectFirst("h6 a, h2 a, a")?.attr("href") ?: return null
+        val href = fixUrl(rawHref, mainUrl)
+        val posterUrl = ImageHelper.extractPosterUrl(this, mainUrl)
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -57,8 +58,9 @@ class FilmMakinesiProvider : MainAPI() {
 
     private fun Element.toRecommendResult(): SearchResponse? {
         val title = this.select("a").lastOrNull()?.text()?.trim() ?: return null
-        val href = fixUrlNull(this.select("a").lastOrNull()?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src") ?: this.selectFirst("img")?.attr("src"))
+        val rawHref = this.select("a").lastOrNull()?.attr("href") ?: return null
+        val href = fixUrl(rawHref, mainUrl)
+        val posterUrl = ImageHelper.extractPosterUrl(this, mainUrl)
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -66,17 +68,18 @@ class FilmMakinesiProvider : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}?s=${query}").document
+        val document = app.get("${mainUrl}?s=${query}", headers = NetworkHelper.defaultHeaders).document
         return document.select("section#film_posts article").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = document.selectFirst("div#film_izle h1, h1.film-title")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content") ?: document.selectFirst("div.poster img")?.attr("src"))
+        val poster = ImageHelper.extractPosterUrl(document.selectFirst("div.poster, aside") ?: document, mainUrl)
+            ?: document.selectFirst("[property='og:image']")?.attr("content")
         val description = document.select("section#film_single article p").lastOrNull()?.text()?.trim()
             ?: document.selectFirst("div.film-ozeti, div.overview")?.text()?.trim()
         val tags = document.selectFirst("dt:contains(Tür:) + dd")?.text()?.split(", ")
@@ -117,19 +120,19 @@ class FilmMakinesiProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(data, headers = NetworkHelper.defaultHeaders).document
         val iframes = mutableListOf<String>()
 
         val iframeElement = document.selectFirst("div.player-div iframe, div#film_player iframe, iframe")
         val iframe = iframeElement?.attr("src") ?: iframeElement?.attr("data-src")
         if (!iframe.isNullOrEmpty() && !iframe.startsWith("#")) {
-            iframes.add(fixUrl(iframe))
+            iframes.add(fixUrl(iframe, mainUrl))
         }
 
         document.select("div.player-tabs button, div.sources a, button[data-src]").forEach { tab ->
             val src = tab.attr("data-src").ifEmpty { tab.attr("data-url") }.ifEmpty { tab.attr("href") }
             if (src.isNotEmpty() && !src.startsWith("#")) {
-                iframes.add(fixUrl(src))
+                iframes.add(fixUrl(src, mainUrl))
             }
         }
 

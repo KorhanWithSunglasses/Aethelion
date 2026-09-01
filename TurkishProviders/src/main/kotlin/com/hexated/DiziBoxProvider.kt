@@ -2,13 +2,16 @@ package com.hexated
 
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.ExtractorHelper
+import com.hexated.core.ImageHelper
 import com.hexated.core.NetworkHelper
+import com.hexated.core.fixUrl
 import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
 import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class DiziBoxProvider : MainAPI() {
@@ -18,7 +21,6 @@ class DiziBoxProvider : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    // 500ms delay prevents 429 Too Many Requests rate limiting
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 500L
     override var sequentialMainPageScrollDelay = 500L
@@ -41,27 +43,22 @@ class DiziBoxProvider : MainAPI() {
     }
 
     override val mainPage = mainPageOf(
-        "arsiv" to "Dizi Arşivi",
-        "arsiv/?tur[0]=aksiyon" to "Aksiyon",
-        "arsiv/?tur[0]=bilimkurgu" to "Bilim Kurgu",
-        "arsiv/?tur[0]=komedi" to "Komedi",
-        "arsiv/?tur[0]=dram" to "Dram",
-        "arsiv/?tur[0]=korku" to "Korku",
-        "arsiv/?tur[0]=animasyon" to "Animasyon",
-        "arsiv/?ulke[]=turkiye" to "Yerli Diziler"
+        "" to "Son Eklenen Bölümler",
+        "diziler" to "Popüler Diziler",
+        "tur/aksiyon" to "Aksiyon Dizileri",
+        "tur/bilim-kurgu" to "Bilim Kurgu Dizileri",
+        "tur/komedi" to "Komedi Dizileri",
+        "tur/dram" to "Dram Dizileri",
+        "tur/animasyon" to "Animasyon",
+        "tur/korku" to "Korku & Gerilim"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val domain = getUrl()
         val url = if (page <= 1) {
-            if (request.data.isEmpty()) "$domain/arsiv" else "$domain/${request.data}"
+            if (request.data.isEmpty()) domain else "$domain/${request.data}/"
         } else {
-            if (request.data.contains("?")) {
-                val parts = request.data.split("?")
-                "$domain/${parts[0]}/page/$page/?${parts[1]}"
-            } else {
-                "$domain/${request.data}/page/$page/"
-            }
+            if (request.data.isEmpty()) "$domain/page/$page/" else "$domain/${request.data}/page/$page/"
         }
 
         return try {
@@ -71,7 +68,7 @@ class DiziBoxProvider : MainAPI() {
                 headers = NetworkHelper.defaultHeaders
             ).document
 
-            val home = doc.select("div.detailed-article, article, div.post, a[href*=\"/diziler/\"], a[href*=\"/dizi/\"]").mapNotNull {
+            val home = doc.select("article, div.detailed-article, div.post, div.swiper-slide, li.grid-six, li.grid-four").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
 
@@ -82,25 +79,15 @@ class DiziBoxProvider : MainAPI() {
     }
 
     private fun Element.toSearchResult(domain: String): SearchResponse? {
-        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        val rawHref = this.selectFirst("a.poster-title, a[href*=\"/diziler/\"], a[href*=\"-sezon-\"], a[href*=\"-bolum\"], a")?.attr("href") ?: return null
         if (rawHref.contains("javascript:") || rawHref.startsWith("#") || rawHref.contains("wp-login") || rawHref.contains("yardim")) return null
-        val href = if (rawHref.startsWith("http")) rawHref else "$domain$rawHref"
+        val href = fixUrl(rawHref, domain)
 
-        val title = this.selectFirst("h2, h3, .title, .post-title, img[alt]")?.let {
+        val title = this.selectFirst("a.poster-title, h2, h3, .title, .post-title, img[alt]")?.let {
             if (it.tagName() == "img") it.attr("alt") else it.text()
         }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
 
-        val posterUrl = this.selectFirst("img")?.let { img ->
-            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }.ifEmpty { img.attr("data-lazy-src") }.ifEmpty { img.attr("srcset") }
-            val src = img.attr("src")
-            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) {
-                dataSrc.split(" ").firstOrNull { it.startsWith("http") } ?: dataSrc
-            } else if (src.isNotEmpty() && !src.startsWith("data:")) {
-                src
-            } else {
-                null
-            }
-        }
+        val posterUrl = ImageHelper.extractPosterUrl(this, domain)
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
@@ -117,7 +104,7 @@ class DiziBoxProvider : MainAPI() {
                 headers = NetworkHelper.defaultHeaders
             ).document
 
-            doc.select("div.detailed-article, article, div.post, a[href*=\"/diziler/\"], a[href*=\"/dizi/\"]").mapNotNull {
+            doc.select("article, div.detailed-article, div.post, div.swiper-slide, li.grid-six, li.grid-four").mapNotNull {
                 it.toSearchResult(domain)
             }.distinctBy { it.url }
         } catch (_: Exception) {
@@ -134,9 +121,8 @@ class DiziBoxProvider : MainAPI() {
         ).document
 
         val title = doc.selectFirst("h1, .tv-overview h1, .title")?.text()?.trim() ?: "Dizi"
-        val poster = doc.selectFirst("div.tv-overview figure img, div.poster img, meta[property=og:image]")?.let {
-            it.attr("data-src").ifEmpty { it.attr("src") }.ifEmpty { it.attr("content") }
-        }
+        val poster = ImageHelper.extractPosterUrl(doc.selectFirst("div.tv-overview, div.poster, figure") ?: doc, domain)
+            ?: doc.selectFirst("meta[property=og:image]")?.attr("content")
         val description = doc.selectFirst("div.tv-story p, div.overview, div.description")?.text()?.trim()
         val year = doc.selectFirst(".year, .date")?.text()?.filter { it.isDigit() }?.toIntOrNull()
         val tags = doc.select("div.genres a, .tags a, div.tv-extra a").map { it.text().trim() }
@@ -187,6 +173,7 @@ class DiziBoxProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val domain = getUrl()
         val doc = app.get(
             data,
             cookies = authCookies,
@@ -196,12 +183,12 @@ class DiziBoxProvider : MainAPI() {
         val iframes = mutableListOf<String>()
         doc.select("iframe").forEach {
             val src = it.attr("src").ifEmpty { it.attr("data-src") }
-            if (src.isNotEmpty()) iframes.add(src)
+            if (src.isNotEmpty()) iframes.add(fixUrl(src, domain))
         }
 
         doc.select("div.video-player iframe, div.player iframe, div.source-item a").forEach { el ->
             val src = el.attr("data-src").ifEmpty { el.attr("src") }.ifEmpty { el.attr("href") }
-            if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(src)
+            if (src.isNotEmpty() && !src.startsWith("#")) iframes.add(fixUrl(src, domain))
         }
 
         val vidmoly = Vidmoly()
@@ -212,12 +199,18 @@ class DiziBoxProvider : MainAPI() {
         iframes.distinct().forEach { rawUrl ->
             val cleanUrl = if (rawUrl.startsWith("//")) "https:$rawUrl" else rawUrl
 
-            when {
-                cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
-                cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
-                else -> ExtractorHelper.resolveStream(cleanUrl, data, "DiziBox", subtitleCallback, callback)
+            try {
+                when {
+                    cleanUrl.contains("vidmoly") -> vidmoly.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("rapidame") -> rapidame.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("streamwish") -> streamwish.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    cleanUrl.contains("closeload") -> closeLoad.getUrl(cleanUrl, data, subtitleCallback, callback)
+                    else -> {
+                        loadExtractor(cleanUrl, "$domain/", subtitleCallback, callback)
+                        ExtractorHelper.resolveStream(cleanUrl, data, "DiziBox", subtitleCallback, callback)
+                    }
+                }
+            } catch (_: Exception) {
             }
         }
 

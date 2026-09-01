@@ -1,6 +1,9 @@
 package com.hexated
 
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.hexated.core.ImageHelper
+import com.hexated.core.NetworkHelper
+import com.hexated.core.fixUrl
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
@@ -39,19 +42,16 @@ class HDFilmCehennemiProvider : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data}/page/$page/"
-        val document = app.get(url).document
+        val document = app.get(url, headers = NetworkHelper.defaultHeaders).document
         val home = document.select("div.section-content a.poster").mapNotNull { it.toSearchResult() }
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
         val title = this.selectFirst("strong.poster-title")?.text()?.trim() ?: return null
-        val href = fixUrlNull(this.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(
-            this.selectFirst("img")?.attr("data-src")
-                ?: this.selectFirst("img")?.attr("data-srcset")
-                ?: this.selectFirst("img")?.attr("src")
-        )
+        val rawHref = this.attr("href").ifEmpty { this.selectFirst("a")?.attr("href") } ?: return null
+        val href = fixUrl(rawHref, mainUrl)
+        val posterUrl = ImageHelper.extractPosterUrl(this, mainUrl)
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -64,7 +64,7 @@ class HDFilmCehennemiProvider : MainAPI() {
         val response = try {
             app.get(
                 "${mainUrl}/search?q=${query}",
-                headers = mapOf("X-Requested-With" to "fetch")
+                headers = NetworkHelper.defaultHeaders + mapOf("X-Requested-With" to "fetch")
             ).parsedSafe<Results>()
         } catch (_: Exception) {
             null
@@ -74,11 +74,9 @@ class HDFilmCehennemiProvider : MainAPI() {
         response.results.forEach { resultHtml ->
             val document = Jsoup.parse(resultHtml)
             val title = document.selectFirst("h4.title")?.text() ?: return@forEach
-            val href = fixUrlNull(document.selectFirst("a")?.attr("href")) ?: return@forEach
-            val posterUrl = fixUrlNull(
-                document.selectFirst("img")?.attr("src")
-                    ?: document.selectFirst("img")?.attr("data-src")
-            )
+            val rawHref = document.selectFirst("a")?.attr("href") ?: return@forEach
+            val href = fixUrl(rawHref, mainUrl)
+            val posterUrl = ImageHelper.extractPosterUrl(document, mainUrl)
 
             searchResults.add(
                 newMovieSearchResponse(title, href, TvType.Movie) {
@@ -90,11 +88,11 @@ class HDFilmCehennemiProvider : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = document.selectFirst("h1.section-title")?.text()?.substringBefore(" izle")?.trim() ?: return null
-        val poster = fixUrlNull(document.select("aside.post-info-poster img.lazyload").lastOrNull()?.attr("data-src"))
-            ?: fixUrlNull(document.selectFirst("aside.post-info-poster img")?.attr("src"))
+        val poster = ImageHelper.extractPosterUrl(document.selectFirst("aside.post-info-poster") ?: document, mainUrl)
+            ?: document.selectFirst("meta[property=og:image]")?.attr("content")
         val tags = document.select("div.post-info-genres a").map { it.text().trim() }
         val year = document.selectFirst("div.post-info-year-country a")?.text()?.trim()?.toIntOrNull()
         val tvType = if (document.select("div.seasons, div.seasons-tab-content").isEmpty()) TvType.Movie else TvType.TvSeries
@@ -102,14 +100,14 @@ class HDFilmCehennemiProvider : MainAPI() {
         val rating = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()?.toDoubleOrNull()
         val actors = document.select("div.post-info-cast a").mapNotNull {
             val name = it.selectFirst("strong")?.text()?.trim() ?: return@mapNotNull null
-            val img = fixUrlNull(it.select("img").attr("data-src"))
+            val img = ImageHelper.extractPosterUrl(it, mainUrl)
             Actor(name, img)
         }
 
         val recommendations = document.select("div.section-slider-container div.slider-slide").mapNotNull {
             val recName = it.selectFirst("a")?.attr("title") ?: return@mapNotNull null
-            val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src")) ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
+            val recHref = fixUrl(it.selectFirst("a")?.attr("href") ?: "", mainUrl)
+            val recPosterUrl = ImageHelper.extractPosterUrl(it, mainUrl)
 
             newTvSeriesSearchResponse(recName, recHref, TvType.TvSeries) {
                 this.posterUrl = recPosterUrl
@@ -122,7 +120,7 @@ class HDFilmCehennemiProvider : MainAPI() {
         return if (tvType == TvType.TvSeries) {
             val episodes = document.select("div.seasons-tab-content a").mapNotNull {
                 val epName = it.selectFirst("h4")?.text()?.trim() ?: return@mapNotNull null
-                val epHref = fixUrlNull(it.attr("href")) ?: return@mapNotNull null
+                val epHref = fixUrl(it.attr("href"), mainUrl)
                 val epEpisode = Regex("""(\d+)\.\s*Bölüm""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull()
                 val epSeason = Regex("""(\d+)\.\s*Sezon""", RegexOption.IGNORE_CASE).find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
@@ -165,7 +163,10 @@ class HDFilmCehennemiProvider : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ) {
         try {
-            val script = app.get(url, referer = "${mainUrl}/").document.select("script").find {
+            val script = app.get(
+                url,
+                headers = NetworkHelper.getRefererHeaders("${mainUrl}/")
+            ).document.select("script").find {
                 it.data().contains("sources:")
             }?.data() ?: return
 
@@ -182,7 +183,8 @@ class HDFilmCehennemiProvider : MainAPI() {
                         type = INFER_TYPE
                     ) {
                         this.referer = "${mainUrl}/"
-                        this.quality = Qualities.Unknown.value
+                        this.quality = Qualities.P1080.value
+                        this.headers = NetworkHelper.getStreamHeaders(mainUrl, mainUrl)
                     }
                 )
             }
@@ -190,7 +192,7 @@ class HDFilmCehennemiProvider : MainAPI() {
             AppUtils.tryParseJson<List<SubSource>>("[$subData]")?.filter { it.kind == "captions" }?.forEach {
                 val subUrl = it.file ?: return@forEach
                 subtitleCallback.invoke(
-                    SubtitleFile(it.label ?: "Türkçe", fixUrl(subUrl))
+                    SubtitleFile(it.label ?: "Türkçe", fixUrl(subUrl, mainUrl))
                 )
             }
         } catch (_: Exception) {
@@ -203,7 +205,7 @@ class HDFilmCehennemiProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(data, headers = NetworkHelper.defaultHeaders).document
 
         // 1. Check alternative links video API
         document.select("div.alternative-links").map { element ->
@@ -215,11 +217,12 @@ class HDFilmCehennemiProvider : MainAPI() {
                 try {
                     val apiGet = app.get(
                         "${mainUrl}/video/$videoID/",
-                        headers = mapOf(
+                        headers = NetworkHelper.defaultHeaders + mapOf(
                             "Content-Type" to "application/json",
-                            "X-Requested-With" to "fetch"
-                        ),
-                        referer = data
+                            "X-Requested-With" to "fetch",
+                            "Referer" to data,
+                            "Origin" to mainUrl
+                        )
                     ).text
 
                     var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)?.replace("\\", "")
@@ -239,7 +242,8 @@ class HDFilmCehennemiProvider : MainAPI() {
         document.select("iframe").forEach {
             val src = it.attr("src").ifEmpty { it.attr("data-src") }
             if (src.isNotEmpty() && !src.startsWith("#")) {
-                loadExtractor(fixUrl(src), "$mainUrl/", subtitleCallback, callback)
+                val cleanIframe = fixUrl(src, mainUrl)
+                loadExtractor(cleanIframe, "$mainUrl/", subtitleCallback, callback)
             }
         }
 

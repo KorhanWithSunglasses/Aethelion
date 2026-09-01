@@ -4,6 +4,7 @@ package com.hexated
 import com.hexated.core.DiziPalCryptoHelper
 import com.hexated.core.DynamicDomainHelper
 import com.hexated.core.ExtractorHelper
+import com.hexated.core.ImageHelper
 import com.hexated.core.NetworkHelper
 import com.hexated.extractors.CloseLoad
 import com.hexated.extractors.Rapidame
@@ -76,17 +77,7 @@ class DiziPalProvider : MainAPI() {
             if (it.tagName() == "img") it.attr("alt") else it.text()
         }?.trim()?.ifEmpty { null } ?: this.text().trim().ifEmpty { null } ?: return null
 
-        val posterUrl = this.selectFirst("img")?.let { img ->
-            val dataSrc = img.attr("data-src").ifEmpty { img.attr("data-srcset") }.ifEmpty { img.attr("data-lazy-src") }.ifEmpty { img.attr("srcset") }
-            val src = img.attr("src")
-            if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) {
-                dataSrc.split(" ").firstOrNull { it.startsWith("http") } ?: dataSrc
-            } else if (src.isNotEmpty() && !src.startsWith("data:")) {
-                src
-            } else {
-                null
-            }
-        }
+        val posterUrl = ImageHelper.extractPosterUrl(this, domain)
 
         val isSeries = href.contains("/dizi/") || href.contains("sezon")
         val type = if (isSeries) TvType.TvSeries else TvType.Movie

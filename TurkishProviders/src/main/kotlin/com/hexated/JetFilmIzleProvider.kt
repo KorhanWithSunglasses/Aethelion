@@ -1,5 +1,8 @@
 package com.hexated
 
+import com.hexated.core.ImageHelper
+import com.hexated.core.NetworkHelper
+import com.hexated.core.fixUrl
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -28,7 +31,7 @@ class JetFilmIzleProvider : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}").document
+        val document = app.get("${request.data}${page}", headers = NetworkHelper.defaultHeaders).document
         val home = document.select("article.movie").mapNotNull { it.toSearchResult() }
         return newHomePageResponse(request.name, home)
     }
@@ -39,11 +42,9 @@ class JetFilmIzleProvider : MainAPI() {
             ?: this.selectFirst("h6 a")?.text() ?: return null
         title = title.substringBefore(" izle").trim()
 
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(
-            this.selectFirst("img")?.attr("data-src")
-                ?: this.selectFirst("img")?.attr("src")
-        )
+        val rawHref = this.selectFirst("a")?.attr("href") ?: return null
+        val href = fixUrl(rawHref, mainUrl)
+        val posterUrl = ImageHelper.extractPosterUrl(this, mainUrl)
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -54,11 +55,11 @@ class JetFilmIzleProvider : MainAPI() {
         val document = try {
             app.post(
                 "${mainUrl}/filmara.php",
-                referer = "${mainUrl}/",
+                headers = NetworkHelper.getRefererHeaders("${mainUrl}/"),
                 data = mapOf("s" to query)
             ).document
         } catch (_: Exception) {
-            app.get("${mainUrl}/?s=${query}").document
+            app.get("${mainUrl}/?s=${query}", headers = NetworkHelper.defaultHeaders).document
         }
 
         return document.select("article.movie").mapNotNull { it.toSearchResult() }
@@ -67,11 +68,12 @@ class JetFilmIzleProvider : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, headers = NetworkHelper.defaultHeaders).document
 
         val title = document.selectFirst("section.movie-exp div.movie-exp-title")?.text()?.substringBefore(" izle")?.trim()
             ?: document.selectFirst("h1")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(document.selectFirst("section.movie-exp img")?.attr("data-src") ?: document.selectFirst("section.movie-exp img")?.attr("src"))
+        val poster = ImageHelper.extractPosterUrl(document.selectFirst("section.movie-exp") ?: document, mainUrl)
+            ?: document.selectFirst("meta[property=og:image]")?.attr("content")
         val yearDiv = document.selectXpath("//div[@class='yap' and contains(strong, 'Vizyon') or contains(strong, 'Yapım')]").text().trim()
         val year = Regex("""(\d{4})""").find(yearDiv)?.groupValues?.get(1)?.toIntOrNull()
         val description = document.selectFirst("section.movie-exp p.aciklama")?.text()?.trim()
@@ -79,7 +81,8 @@ class JetFilmIzleProvider : MainAPI() {
         val rating = document.selectFirst("section.movie-exp div.imdb_puan span")?.text()?.split(" ")?.lastOrNull()?.toDoubleOrNull()
         val actors = document.select("section.movie-exp div.oyuncu").mapNotNull {
             val name = it.selectFirst("div.name")?.text()?.trim() ?: return@mapNotNull null
-            Actor(name, fixUrlNull(it.selectFirst("img")?.attr("data-src")))
+            val img = ImageHelper.extractPosterUrl(it, mainUrl)
+            Actor(name, img)
         }
 
         val recommendations = document.select("div#benzers article").mapNotNull {
@@ -88,8 +91,8 @@ class JetFilmIzleProvider : MainAPI() {
                 ?: it.selectFirst("h6 a")?.text() ?: return@mapNotNull null
             recName = recName.substringBefore(" izle").trim()
 
-            val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
+            val recHref = fixUrl(it.selectFirst("a")?.attr("href") ?: "", mainUrl)
+            val recPosterUrl = ImageHelper.extractPosterUrl(it, mainUrl)
 
             newMovieSearchResponse(recName, recHref, TvType.Movie) {
                 this.posterUrl = recPosterUrl
@@ -113,14 +116,14 @@ class JetFilmIzleProvider : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(data, headers = NetworkHelper.defaultHeaders).document
         val iframes = mutableListOf<String>()
 
-        val mainIframe = fixUrlNull(document.selectFirst("div#movie iframe")?.attr("data-src"))
-            ?: fixUrlNull(document.selectFirst("div#movie iframe")?.attr("data"))
-            ?: fixUrlNull(document.selectFirst("div#movie iframe")?.attr("src"))
-        if (mainIframe != null) {
-            iframes.add(mainIframe)
+        val mainIframe = document.selectFirst("div#movie iframe")?.attr("data-src")
+            ?: document.selectFirst("div#movie iframe")?.attr("data")
+            ?: document.selectFirst("div#movie iframe")?.attr("src")
+        if (!mainIframe.isNullOrEmpty()) {
+            iframes.add(fixUrl(mainIframe, mainUrl))
         }
 
         document.select("div.film_part a").forEach {
@@ -130,16 +133,18 @@ class JetFilmIzleProvider : MainAPI() {
             val href = it.attr("href")
             if (href.isNotEmpty() && !href.startsWith("#")) {
                 try {
-                    val movDoc = app.get(href).document
-                    val iframe = fixUrlNull(movDoc.selectFirst("div#movie iframe")?.attr("data-src"))
-                        ?: fixUrlNull(movDoc.selectFirst("div#movie iframe")?.attr("data"))
-                        ?: fixUrlNull(movDoc.selectFirst("div#movie iframe")?.attr("src"))
-                    if (iframe != null) {
-                        iframes.add(iframe)
+                    val movDoc = app.get(href, headers = NetworkHelper.getRefererHeaders(data)).document
+                    val iframe = movDoc.selectFirst("div#movie iframe")?.attr("data-src")
+                        ?: movDoc.selectFirst("div#movie iframe")?.attr("data")
+                        ?: movDoc.selectFirst("div#movie iframe")?.attr("src")
+                    if (!iframe.isNullOrEmpty()) {
+                        iframes.add(fixUrl(iframe, mainUrl))
                     } else {
                         movDoc.select("div#movie p a").forEach { link ->
-                            val downloadLink = fixUrlNull(link.attr("href"))
-                            if (downloadLink != null) iframes.add(downloadLink)
+                            val downloadLink = link.attr("href")
+                            if (downloadLink.isNotEmpty() && !downloadLink.startsWith("#")) {
+                                iframes.add(fixUrl(downloadLink, mainUrl))
+                            }
                         }
                     }
                 } catch (_: Exception) {
@@ -150,10 +155,10 @@ class JetFilmIzleProvider : MainAPI() {
         for (iframe in iframes.distinct()) {
             if (iframe.contains("jetv.xyz")) {
                 try {
-                    val jetvDoc = app.get(iframe).document
-                    val jetvIframe = fixUrlNull(jetvDoc.selectFirst("iframe")?.attr("src"))
-                    if (jetvIframe != null) {
-                        loadExtractor(jetvIframe, "${mainUrl}/", subtitleCallback, callback)
+                    val jetvDoc = app.get(iframe, headers = NetworkHelper.getRefererHeaders("${mainUrl}/")).document
+                    val jetvIframe = jetvDoc.selectFirst("iframe")?.attr("src")
+                    if (!jetvIframe.isNullOrEmpty()) {
+                        loadExtractor(fixUrl(jetvIframe, mainUrl), "${mainUrl}/", subtitleCallback, callback)
                     }
                 } catch (_: Exception) {
                 }
