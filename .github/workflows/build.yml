@@ -1,11 +1,10 @@
 name: Build
 
-concurrency: 
+concurrency:
   group: "build"
   cancel-in-progress: true
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - master
@@ -13,6 +12,7 @@ on:
     paths-ignore:
       - '*.md'
       - '.gitignore'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,46 +24,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          path: "src"
           fetch-depth: 0
 
-      - name: Checkout builds
-        uses: actions/checkout@v4
-        with:
-          ref: "builds"
-          path: "builds"
-      
-      - name: Clean old builds
-        run: |
-          rm -f $GITHUB_WORKSPACE/builds/*.cs3 || true
-          rm -f $GITHUB_WORKSPACE/builds/*.jar || true
-
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: true
+
       - name: Build Plugins
         run: |
-          cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           ./gradlew makePluginsJson --refresh-dependencies --stacktrace
-          find . -name "*.cs3" -exec cp -f {} $GITHUB_WORKSPACE/builds/ \;
-          find . -name "*.jar" -exec cp -f {} $GITHUB_WORKSPACE/builds/ \;
-          cp -f build/plugins.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          cp -f repo.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          cp -f domains.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          ls -la $GITHUB_WORKSPACE/builds/
 
-      - name: Push builds
+      - name: Collect build artifacts
         run: |
-          cd $GITHUB_WORKSPACE/builds
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-          git add .
-          git commit --amend -m "Build $GITHUB_SHA" || git commit -m "Build $GITHUB_SHA" || exit 0
-          git push --force origin builds
+          mkdir -p build
+          find . -name "*.cs3" -exec cp -f {} build/ \;
+          find . -name "*.jar" -exec cp -f {} build/ \;
+          cp -f build/plugins.json build/ 2>/dev/null || true
+          cp -f plugins.json build/ 2>/dev/null || true
+          cp -f repo.json build/ 2>/dev/null || true
+          cp -f domains.json build/ 2>/dev/null || true
+          ls -la build/
+
+      - name: Deploy to builds branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: builds
+          folder: build
+          clean: false
