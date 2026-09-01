@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -41,12 +42,15 @@ open class Vidmoly : ExtractorApi() {
             }
 
             m3u8Url?.let { streamUrl ->
+                val isM3u8 = streamUrl.contains(".m3u8") || streamUrl.contains("molystream") || streamUrl.contains("vidmoly") || streamUrl.contains("sheila")
+                val linkType = if (isM3u8) ExtractorLinkType.M3U8 else INFER_TYPE
+
                 callback.invoke(
                     newExtractorLink(
                         source = this.name,
-                        name = "${this.name} Fast",
+                        name = "${this.name} 1080p",
                         url = streamUrl,
-                        type = INFER_TYPE
+                        type = linkType
                     ) {
                         this.referer = url
                         this.quality = Qualities.P1080.value

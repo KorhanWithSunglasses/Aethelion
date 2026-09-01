@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -29,7 +30,7 @@ open class TurboImgz : ExtractorApi() {
                 source = "${this.name} - " + url.substringBefore("||").uppercase(),
                 name = "${this.name} - " + url.substringBefore("||").uppercase(),
                 url = videoLink,
-                type = INFER_TYPE
+                type = ExtractorLinkType.M3U8
             ) {
                 this.referer = extRef
                 this.quality = Qualities.Unknown.value

@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
@@ -56,7 +57,7 @@ open class CloseLoad : ExtractorApi() {
                                 source = this.name,
                                 name = this.name,
                                 url = m3uLink,
-                                type = INFER_TYPE
+                                type = ExtractorLinkType.M3U8
                             ) {
                                 this.referer = mainUrl
                                 this.quality = Qualities.Unknown.value

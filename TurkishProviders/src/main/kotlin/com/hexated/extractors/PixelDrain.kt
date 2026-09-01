@@ -3,6 +3,7 @@ package com.hexated.extractors
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -26,7 +27,7 @@ open class PixelDrain : ExtractorApi() {
                 source = "pixeldrain - $pixelId",
                 name = "pixeldrain - $pixelId",
                 url = downloadLink,
-                type = INFER_TYPE
+                type = ExtractorLinkType.M3U8
             ) {
                 this.referer = "${mainUrl}/u/${pixelId}?download"
                 this.quality = Qualities.Unknown.value
