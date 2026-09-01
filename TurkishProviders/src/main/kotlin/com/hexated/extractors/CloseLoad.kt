@@ -1,11 +1,12 @@
 package com.hexated.extractors
 
 import android.util.Base64
+import com.hexated.core.fixUrl
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrl
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
 
@@ -34,7 +35,7 @@ open class CloseLoad : ExtractorApi() {
             subtitleCallback.invoke(
                 SubtitleFile(
                     lang = it.attr("label"),
-                    url = fixUrl(it.attr("src"))
+                    url = fixUrl(it.attr("src"), mainUrl)
                 )
             )
         }
@@ -56,7 +57,7 @@ open class CloseLoad : ExtractorApi() {
                                 url = m3uLink,
                                 referer = mainUrl,
                                 quality = Qualities.Unknown.value,
-                                isM3u8 = true
+                                type = INFER_TYPE
                             )
                         )
                         return

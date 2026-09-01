@@ -236,7 +236,7 @@ class DiziPalProvider : MainAPI() {
                                 url = m3u8Match,
                                 referer = cleanUrl,
                                 quality = Qualities.P1080.value,
-                                type = ExtractorLinkType.M3U8
+                                type = INFER_TYPE
                             )
                         )
                     }

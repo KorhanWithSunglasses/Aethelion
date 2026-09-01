@@ -1,10 +1,11 @@
 package com.hexated.extractors
 
+import com.hexated.core.fixUrl
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrl
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
 
@@ -30,7 +31,7 @@ open class RapidVid : ExtractorApi() {
                 subtitleCallback.invoke(
                     SubtitleFile(
                         lang = subLang.replace("\\u0131", "ı").replace("\\u0130", "İ").replace("\\u00fc", "ü").replace("\\u00e7", "ç"),
-                        url = fixUrl(subUrl.replace("\\", ""))
+                        url = fixUrl(subUrl.replace("\\", ""), mainUrl)
                     )
                 )
             }
@@ -58,7 +59,7 @@ open class RapidVid : ExtractorApi() {
                     url = decoded,
                     referer = extRef,
                     quality = Qualities.Unknown.value,
-                    isM3u8 = true
+                    type = INFER_TYPE
                 )
             )
         }

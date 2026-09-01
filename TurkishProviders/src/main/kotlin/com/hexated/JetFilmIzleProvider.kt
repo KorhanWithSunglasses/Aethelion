@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.lagradost.cloudstream3.*

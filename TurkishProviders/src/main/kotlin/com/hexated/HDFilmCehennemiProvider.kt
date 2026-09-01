@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.fasterxml.jackson.annotation.JsonProperty
