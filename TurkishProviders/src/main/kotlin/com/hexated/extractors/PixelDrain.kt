@@ -5,6 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class PixelDrain : ExtractorApi() {
     override val name = "PixelDrain"
@@ -21,14 +22,15 @@ open class PixelDrain : ExtractorApi() {
         val downloadLink = "${mainUrl}/api/file/${pixelId}?download"
 
         callback.invoke(
-            ExtractorLink(
+            newExtractorLink(
                 source = "pixeldrain - $pixelId",
                 name = "pixeldrain - $pixelId",
                 url = downloadLink,
-                referer = "${mainUrl}/u/${pixelId}?download",
-                quality = Qualities.Unknown.value,
                 type = INFER_TYPE
-            )
+            ) {
+                this.referer = "${mainUrl}/u/${pixelId}?download"
+                this.quality = Qualities.Unknown.value
+            }
         )
     }
 }

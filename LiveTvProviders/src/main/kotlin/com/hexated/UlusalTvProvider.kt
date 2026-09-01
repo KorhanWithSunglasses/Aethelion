@@ -121,15 +121,16 @@ class UlusalTvProvider : MainAPI() {
             ?: return false
 
         callback(
-            ExtractorLink(
+            newExtractorLink(
                 source = name,
                 name = "Ulusal TV HD",
                 url = m3u8Url,
-                referer = data,
-                quality = Qualities.P1080.value,
-                type = INFER_TYPE,
-                headers = NetworkHelper.getStreamHeaders(data, data)
-            )
+                type = INFER_TYPE
+            ) {
+                this.referer = data
+                this.quality = Qualities.P1080.value
+                this.headers = NetworkHelper.getStreamHeaders(data, data)
+            }
         )
         return true
     }

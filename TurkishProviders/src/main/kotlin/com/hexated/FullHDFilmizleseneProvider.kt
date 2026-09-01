@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.lagradost.cloudstream3.*
@@ -63,7 +62,7 @@ class FullHDFilmizleseneProvider : MainAPI() {
         val description = document.selectFirst("div.ozet, div.description, p.description")?.text()?.trim()
         val year = document.selectFirst("span.year, a[href*='/yil/']")?.text()?.filter { it.isDigit() }?.toIntOrNull()
         val tags = document.select("span.genre a, a[href*='/kategori/']").map { it.text().trim() }
-        val rating = document.selectFirst("span.imdb-score, span.imdb")?.text()?.trim()?.toDoubleOrNull()?.times(1000)?.toInt()
+        val rating = document.selectFirst("span.imdb-score, span.imdb")?.text()?.trim()?.toDoubleOrNull()
         val actors = document.select("div.actors a, a[href*='/oyuncu/']").map { Actor(it.text().trim()) }
         val trailer = document.selectFirst("div.trailer iframe")?.attr("src")?.let { fixUrlNull(it) }
 
@@ -72,7 +71,7 @@ class FullHDFilmizleseneProvider : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.rating = rating
+            this.score = rating?.let { Score.from10(it) }
             addActors(actors)
             addTrailer(trailer)
         }

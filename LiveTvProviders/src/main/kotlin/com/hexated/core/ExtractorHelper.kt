@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated.core
 
 import com.lagradost.cloudstream3.SubtitleFile
@@ -6,6 +5,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 object ExtractorHelper {
     suspend fun resolveStream(
@@ -20,15 +20,16 @@ object ExtractorHelper {
         // 1. Direct M3U8 Stream
         if (cleanUrl.contains(".m3u8")) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = "$name HD",
                     url = cleanUrl,
-                    referer = referer ?: "",
-                    quality = Qualities.P1080.value,
-                    type = INFER_TYPE,
-                    headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
-                )
+                    type = INFER_TYPE
+                ) {
+                    this.referer = referer ?: ""
+                    this.quality = Qualities.P1080.value
+                    this.headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
+                }
             )
             return
         }
@@ -36,15 +37,16 @@ object ExtractorHelper {
         // 2. Direct MP4 Stream
         if (cleanUrl.contains(".mp4")) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = name,
                     name = "$name MP4",
                     url = cleanUrl,
-                    referer = referer ?: "",
-                    quality = Qualities.P1080.value,
-                    type = INFER_TYPE,
-                    headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
-                )
+                    type = INFER_TYPE
+                ) {
+                    this.referer = referer ?: ""
+                    this.quality = Qualities.P1080.value
+                    this.headers = NetworkHelper.getStreamHeaders(referer ?: cleanUrl, referer ?: cleanUrl)
+                }
             )
             return
         }

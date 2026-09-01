@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated.extractors
 
 import com.hexated.core.JsUnpacker
@@ -8,6 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class Vidmoly : ExtractorApi() {
     override var name = "Vidmoly"
@@ -33,14 +33,15 @@ open class Vidmoly : ExtractorApi() {
             m3u8Match?.let { match ->
                 val streamUrl = match.groupValues[1]
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = this.name,
-                        name = "${this.name} HLS",
+                        name = "${this.name} Fast",
                         url = streamUrl,
-                        referer = url,
-                        quality = Qualities.P1080.value,
                         type = INFER_TYPE
-                    )
+                    ) {
+                        this.referer = url
+                        this.quality = Qualities.P1080.value
+                    }
                 )
             }
         } catch (e: Exception) {

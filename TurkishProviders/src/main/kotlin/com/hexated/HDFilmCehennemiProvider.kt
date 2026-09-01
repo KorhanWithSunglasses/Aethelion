@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.fasterxml.jackson.annotation.JsonProperty
@@ -100,7 +99,7 @@ class HDFilmCehennemiProvider : MainAPI() {
         val year = document.selectFirst("div.post-info-year-country a")?.text()?.trim()?.toIntOrNull()
         val tvType = if (document.select("div.seasons, div.seasons-tab-content").isEmpty()) TvType.Movie else TvType.TvSeries
         val description = document.selectFirst("article.post-info-content > p, div.post-info-content")?.text()?.trim()
-        val rating = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()?.toDoubleOrNull()?.times(1000)?.toInt()
+        val rating = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()?.toDoubleOrNull()
         val actors = document.select("div.post-info-cast a").mapNotNull {
             val name = it.selectFirst("strong")?.text()?.trim() ?: return@mapNotNull null
             val img = fixUrlNull(it.select("img").attr("data-src"))
@@ -140,7 +139,7 @@ class HDFilmCehennemiProvider : MainAPI() {
                 this.year = year
                 this.plot = description
                 this.tags = tags
-                this.rating = rating
+                this.score = rating?.let { Score.from10(it) }
                 this.recommendations = recommendations
                 addActors(actors)
                 addTrailer(trailer)
@@ -151,7 +150,7 @@ class HDFilmCehennemiProvider : MainAPI() {
                 this.year = year
                 this.plot = description
                 this.tags = tags
-                this.rating = rating
+                this.score = rating?.let { Score.from10(it) }
                 this.recommendations = recommendations
                 addActors(actors)
                 addTrailer(trailer)
@@ -176,14 +175,15 @@ class HDFilmCehennemiProvider : MainAPI() {
             val decodedUrl = base64Decode(videoData)
             if (decodedUrl.isNotEmpty()) {
                 callback.invoke(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = source,
                         name = source,
                         url = decodedUrl,
-                        referer = "${mainUrl}/",
-                        quality = Qualities.Unknown.value,
                         type = INFER_TYPE
-                    )
+                    ) {
+                        this.referer = "${mainUrl}/"
+                        this.quality = Qualities.Unknown.value
+                    }
                 )
             }
 

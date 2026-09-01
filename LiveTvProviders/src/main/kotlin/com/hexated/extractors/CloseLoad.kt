@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class CloseLoad : ExtractorApi() {
     override val name = "CloseLoad"
@@ -51,14 +52,15 @@ open class CloseLoad : ExtractorApi() {
                         val data = match.groupValues[1]
                         val m3uLink = getm3uLink(data)
                         callback.invoke(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = this.name,
                                 name = this.name,
                                 url = m3uLink,
-                                referer = mainUrl,
-                                quality = Qualities.Unknown.value,
                                 type = INFER_TYPE
-                            )
+                            ) {
+                                this.referer = mainUrl
+                                this.quality = Qualities.Unknown.value
+                            }
                         )
                         return
                     }

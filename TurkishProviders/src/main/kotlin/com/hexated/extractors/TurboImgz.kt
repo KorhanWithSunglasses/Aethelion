@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class TurboImgz : ExtractorApi() {
     override val name = "TurboImgz"
@@ -24,14 +25,15 @@ open class TurboImgz : ExtractorApi() {
         val videoLink = Regex("""file:\s*"(.*)",""").find(videoReq)?.groupValues?.get(1) ?: return
 
         callback.invoke(
-            ExtractorLink(
+            newExtractorLink(
                 source = "${this.name} - " + url.substringBefore("||").uppercase(),
                 name = "${this.name} - " + url.substringBefore("||").uppercase(),
                 url = videoLink,
-                referer = extRef,
-                quality = Qualities.Unknown.value,
                 type = INFER_TYPE
-            )
+            ) {
+                this.referer = extRef
+                this.quality = Qualities.Unknown.value
+            }
         )
     }
 }

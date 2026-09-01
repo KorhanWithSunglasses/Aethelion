@@ -232,14 +232,15 @@ class DiziPalProvider : MainAPI() {
                     val m3u8Match = Regex("""(?:file|source)\s*:\s*["']([^"']+\.m3u8[^"']*)["']""").find(playerHtml)?.groupValues?.get(1)
                     if (m3u8Match != null) {
                         callback(
-                            ExtractorLink(
+                            newExtractorLink(
                                 source = name,
                                 name = "DiziPal HD",
                                 url = m3u8Match,
-                                referer = cleanUrl,
-                                quality = Qualities.P1080.value,
                                 type = INFER_TYPE
-                            )
+                            ) {
+                                this.referer = cleanUrl
+                                this.quality = Qualities.P1080.value
+                            }
                         )
                     }
                 }

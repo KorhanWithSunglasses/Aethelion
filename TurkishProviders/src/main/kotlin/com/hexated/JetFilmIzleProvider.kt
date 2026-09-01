@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.lagradost.cloudstream3.*
@@ -77,7 +76,7 @@ class JetFilmIzleProvider : MainAPI() {
         val year = Regex("""(\d{4})""").find(yearDiv)?.groupValues?.get(1)?.toIntOrNull()
         val description = document.selectFirst("section.movie-exp p.aciklama")?.text()?.trim()
         val tags = document.select("section.movie-exp div.catss a").map { it.text().trim() }
-        val rating = document.selectFirst("section.movie-exp div.imdb_puan span")?.text()?.split(" ")?.lastOrNull()?.toDoubleOrNull()?.times(1000)?.toInt()
+        val rating = document.selectFirst("section.movie-exp div.imdb_puan span")?.text()?.split(" ")?.lastOrNull()?.toDoubleOrNull()
         val actors = document.select("section.movie-exp div.oyuncu").mapNotNull {
             val name = it.selectFirst("div.name")?.text()?.trim() ?: return@mapNotNull null
             Actor(name, fixUrlNull(it.selectFirst("img")?.attr("data-src")))
@@ -102,7 +101,7 @@ class JetFilmIzleProvider : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.rating = rating
+            this.score = rating?.let { Score.from10(it) }
             this.recommendations = recommendations
             addActors(actors)
         }

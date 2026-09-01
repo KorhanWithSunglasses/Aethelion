@@ -1,4 +1,3 @@
-@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.lagradost.cloudstream3.*
@@ -82,7 +81,7 @@ class FilmMakinesiProvider : MainAPI() {
             ?: document.selectFirst("div.film-ozeti, div.overview")?.text()?.trim()
         val tags = document.selectFirst("dt:contains(Tür:) + dd")?.text()?.split(", ")
             ?: document.select("div.film-tur a").map { it.text().trim() }
-        val rating = document.selectFirst("dt:contains(IMDB Puanı:) + dd")?.text()?.trim()?.toDoubleOrNull()?.times(1000)?.toInt()
+        val rating = document.selectFirst("dt:contains(IMDB Puanı:) + dd")?.text()?.trim()?.toDoubleOrNull()
         val year = document.selectFirst("dt:contains(Yapım Yılı:) + dd")?.text()?.trim()?.toIntOrNull()
 
         val durationElement = document.select("dt:contains(Film Süresi:) + dd time").attr("datetime")
@@ -104,7 +103,7 @@ class FilmMakinesiProvider : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.rating = rating
+            this.score = rating?.let { Score.from10(it) }
             this.duration = duration
             this.recommendations = recommendations
             actors?.let { addActors(it) }

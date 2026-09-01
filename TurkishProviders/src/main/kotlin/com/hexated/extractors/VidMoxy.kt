@@ -8,6 +8,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.getAndUnpack
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class VidMoxy : ExtractorApi() {
     override val name = "VidMoxy"
@@ -21,47 +22,43 @@ open class VidMoxy : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val extRef = referer ?: ""
-        val videoReq = app.get(url, referer = extRef).text
+        val iSource = app.get(url, referer = extRef)
 
-        val subUrls = mutableSetOf<String>()
-        Regex("""captions","file":"([^"]+)","label":"([^"]+)"""").findAll(videoReq).forEach {
-            val (subUrl, subLang) = it.destructured
-            if (subUrl !in subUrls) {
-                subUrls.add(subUrl)
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        lang = subLang.replace("\\u0131", "ı").replace("\\u0130", "İ").replace("\\u00fc", "ü").replace("\\u00e7", "ç"),
-                        url = fixUrl(subUrl.replace("\\", ""), mainUrl)
-                    )
-                )
-            }
-        }
-
-        var extractedValue = Regex("""file": "(.*)",""").find(videoReq)?.groupValues?.get(1)
-        val decoded: String?
-
-        if (extractedValue != null) {
-            val bytes = extractedValue.split("\\x").filter { it.isNotEmpty() }.map { it.toInt(16).toByte() }.toByteArray()
-            decoded = String(bytes, Charsets.UTF_8)
-        } else {
-            val evaljwSetup = Regex("""\};\s*(eval\(function[\s\S]*?)var played = \d+;""").find(videoReq)?.groupValues?.get(1) ?: return
-            val jwSetup = getAndUnpack(getAndUnpack(evaljwSetup)).replace("\\\\", "\\")
-            extractedValue = Regex("""file":"(.*)","label""").find(jwSetup)?.groupValues?.get(1)?.replace("\\\\x", "")
-            val bytes = extractedValue?.chunked(2)?.map { it.toInt(16).toByte() }?.toByteArray()
-            decoded = bytes?.toString(Charsets.UTF_8)
-        }
-
-        if (decoded != null) {
-            callback.invoke(
-                ExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = decoded,
-                    referer = extRef,
-                    quality = Qualities.Unknown.value,
-                    type = INFER_TYPE
+        iSource.document.select("track").forEach {
+            subtitleCallback.invoke(
+                SubtitleFile(
+                    lang = it.attr("label"),
+                    url = fixUrl(it.attr("src"), mainUrl)
                 )
             )
+        }
+
+        val scripts = iSource.document.select("script[type=text/javascript]")
+        for (s in scripts) {
+            val scriptData = s.data().trim()
+            if (scriptData.contains("eval(function")) {
+                try {
+                    val rawScript = getAndUnpack(scriptData)
+                    val match = Regex("""file:\s*"(.*)"""").find(rawScript)
+                    if (match != null) {
+                        val videoLink = match.groupValues[1]
+                        val isHls = videoLink.contains(".m3u8")
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = this.name,
+                                url = videoLink,
+                                type = INFER_TYPE
+                            ) {
+                                this.referer = mainUrl
+                                this.quality = if (isHls) Qualities.Unknown.value else Qualities.P1080.value
+                            }
+                        )
+                        return
+                    }
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 }

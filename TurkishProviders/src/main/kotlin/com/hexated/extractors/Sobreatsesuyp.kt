@@ -1,12 +1,13 @@
 package com.hexated.extractors
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.getAndUnpack
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
 open class Sobreatsesuyp : ExtractorApi() {
     override val name = "Sobreatsesuyp"
@@ -20,41 +21,34 @@ open class Sobreatsesuyp : ExtractorApi() {
         callback: (ExtractorLink) -> Unit
     ) {
         val extRef = referer ?: ""
-        val videoReq = app.get(url, referer = extRef).text
+        val iSource = app.get(url, referer = extRef)
 
-        val file = Regex("""file":"([^"]+)""").find(videoReq)?.groupValues?.get(1) ?: return
-        val postLink = "${mainUrl}/" + file.replace("\\", "")
-        val rawList = app.post(postLink, referer = extRef).parsedSafe<List<Any>>() ?: return
-
-        val postJson = rawList.drop(1).mapNotNull { item ->
-            val mapItem = item as? Map<*, *> ?: return@mapNotNull null
-            SobreatsesuypVideoData(
-                title = mapItem["title"] as? String,
-                file = mapItem["file"] as? String
-            )
-        }
-
-        for (item in postJson) {
-            val f = item.file ?: continue
-            val title = item.title ?: continue
-
-            val videoData = app.post("${mainUrl}/playlist/${f.substring(1)}.txt", referer = extRef).text
-
-            callback.invoke(
-                ExtractorLink(
-                    source = this.name,
-                    name = "${this.name} - $title",
-                    url = videoData,
-                    referer = extRef,
-                    quality = Qualities.Unknown.value,
-                    type = INFER_TYPE
-                )
-            )
+        val scripts = iSource.document.select("script[type=text/javascript]")
+        for (s in scripts) {
+            val scriptData = s.data().trim()
+            if (scriptData.contains("eval(function")) {
+                try {
+                    val rawScript = getAndUnpack(scriptData)
+                    val match = Regex("""sources:\[\{file:"(.*?)"""").find(rawScript)
+                    if (match != null) {
+                        val videoLink = match.groupValues[1]
+                        val isHls = videoLink.contains(".m3u8")
+                        callback.invoke(
+                            newExtractorLink(
+                                source = this.name,
+                                name = this.name,
+                                url = videoLink,
+                                type = INFER_TYPE
+                            ) {
+                                this.referer = mainUrl
+                                this.quality = if (isHls) Qualities.Unknown.value else Qualities.P1080.value
+                            }
+                        )
+                        return
+                    }
+                } catch (_: Exception) {
+                }
+            }
         }
     }
-
-    data class SobreatsesuypVideoData(
-        @JsonProperty("title") val title: String? = null,
-        @JsonProperty("file") val file: String? = null
-    )
 }
