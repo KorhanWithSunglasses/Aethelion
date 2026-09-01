@@ -1,15 +1,13 @@
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-        maven("https://jitpack.io")
+rootProject.name = "CloudstreamPlugins"
+
+val disabled = listOf<String>()
+
+File(rootDir, ".").eachDir { dir ->
+    if (!disabled.contains(dir.name) && File(dir, "build.gradle.kts").exists()) {
+        include(dir.name)
     }
 }
 
-rootProject.name = "CloudstreamPlugins"
-
-include("TurkishProviders")
-include("AsianAnimeProviders")
-include("GlobalProviders")
-include("LiveTvProviders")
+fun File.eachDir(block: (File) -> Unit) {
+    listFiles()?.filter { it.isDirectory }?.forEach { block(it) }
+}
