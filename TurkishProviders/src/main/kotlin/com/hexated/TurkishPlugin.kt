@@ -1,25 +1,40 @@
 package com.hexated
 
 import android.content.Context
+import com.hexated.extractors.*
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 
 @CloudstreamPlugin
 class TurkishPlugin : Plugin() {
     override fun load(context: Context) {
-        // Register all Phase 1 Core Turkish Providers
+        // Register all Core Turkish Providers
         registerMainAPI(HDFilmCehennemiProvider())
+        registerMainAPI(DiziPalProvider())
+        registerMainAPI(FilmMakinesiProvider())
+        registerMainAPI(FullHDFilmizleseneProvider())
+        registerMainAPI(DiziBoxProvider())
+        registerMainAPI(JetFilmIzleProvider())
         registerMainAPI(DiziWatchProvider())
         registerMainAPI(FilmModuProvider())
         registerMainAPI(SezonlukDiziProvider())
-        registerMainAPI(DiziPalProvider())
         registerMainAPI(DiziMomProvider())
-        registerMainAPI(FilmMakinesiProvider())
         registerMainAPI(DizillaProvider())
         registerMainAPI(SetFilmIzleProvider())
         registerMainAPI(WebteIzleProvider())
-        registerMainAPI(DiziBoxProvider())
         registerMainAPI(DizilabProvider())
-        registerMainAPI(JetFilmIzleProvider())
+
+        // Register all Custom Turkish Extractors
+        registerExtractorAPI(CloseLoad())
+        registerExtractorAPI(RapidVid())
+        registerExtractorAPI(VidMoxy())
+        registerExtractorAPI(TRsTX())
+        registerExtractorAPI(Sobreatsesuyp())
+        registerExtractorAPI(TurboImgz())
+        registerExtractorAPI(PixelDrain())
+        registerExtractorAPI(Vidmoly())
+        registerExtractorAPI(Rapidame())
+        registerExtractorAPI(Streamwish())
+        registerExtractorAPI(FileLions())
     }
 }
