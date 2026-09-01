@@ -7,9 +7,9 @@ pluginManagement {
     }
 }
 
-rootProject.name = "Aethelion"
+rootProject.name = "CloudstreamPlugins"
 
-include(":TurkishProviders")
-include(":AsianAnimeProviders")
-include(":GlobalProviders")
-include(":LiveTvProviders")
+include("TurkishProviders")
+include("AsianAnimeProviders")
+include("GlobalProviders")
+include("LiveTvProviders")
