@@ -1,3 +1,4 @@
+@file:Suppress("DEPRECATION")
 package com.hexated
 
 import com.hexated.core.DiziPalCryptoHelper
@@ -10,6 +11,7 @@ import com.hexated.extractors.Streamwish
 import com.hexated.extractors.Vidmoly
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import org.jsoup.nodes.Element
 

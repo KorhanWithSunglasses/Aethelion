@@ -52,10 +52,11 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           ./gradlew makePluginsJson --refresh-dependencies --stacktrace
-          cp -f $GITHUB_WORKSPACE/src/**/build/*.cs3 $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          cp -f $GITHUB_WORKSPACE/src/build/plugins.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          cp -f $GITHUB_WORKSPACE/src/repo.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
-          cp -f $GITHUB_WORKSPACE/src/domains.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
+          find . -name "*.cs3" -exec cp -f {} $GITHUB_WORKSPACE/builds/ \;
+          find . -name "*.jar" -exec cp -f {} $GITHUB_WORKSPACE/builds/ \;
+          cp -f build/plugins.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
+          cp -f repo.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
+          cp -f domains.json $GITHUB_WORKSPACE/builds/ 2>/dev/null || true
           ls -la $GITHUB_WORKSPACE/builds/
 
       - name: Push builds

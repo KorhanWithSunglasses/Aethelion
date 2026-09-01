@@ -68,7 +68,7 @@ class UlusalTvProvider : MainAPI() {
             if (dataSrc.isNotEmpty() && !dataSrc.startsWith("data:")) dataSrc else src
         }
 
-        return newLiveStreamSearchResponse(title, href, TvType.Live) {
+        return newMovieSearchResponse(title, href, TvType.Live) {
             this.posterUrl = posterUrl
         }
     }
@@ -94,7 +94,7 @@ class UlusalTvProvider : MainAPI() {
         }
         val description = doc.selectFirst("div.channel-desc, div.description, p")?.text()?.trim() ?: "Canlı TV Yayını"
 
-        return newLiveStreamLoadResponse(title, url, TvType.Live, url) {
+        return newMovieLoadResponse(title, url, TvType.Live, url) {
             this.posterUrl = poster
             this.plot = description
         }
