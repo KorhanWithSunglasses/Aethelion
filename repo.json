@@ -1,8 +1,0 @@
-{
-  "name": "Aethelion",
-  "description": "Aethelion Multi-Provider Repository for CloudStream",
-  "manifestVersion": 1,
-  "pluginLists": [
-    "https://raw.githubusercontent.com/KorhanWithSunglasses/Aethelion/builds/plugins.json"
-  ]
-}
